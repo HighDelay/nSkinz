@@ -109,7 +109,7 @@ static auto get_new_animation(const fnv::hash model, const int sequence) -> int
 		switch (sequence)
 		{
 		case SEQUENCE_DEFAULT_LOOKAT01:
-			return random_sequence(SEQUENCE_CSS_LOOKAT01, SEQUENCE_CSS_LOOKAT02);
+			return random_sequence(0, 1) ? 12 : 15;
 		default:
 			return sequence;
 		}

@@ -252,9 +252,9 @@ void draw_gui()
 		ImGui::PopItemWidth();
 		ImGui::Columns(1);
 
-		ImGui::Text("nSkinz by namazso");
-		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("https://skinchanger.download").x - 20);
-		ImGui::Text("https://skinchanger.download");
+		ImGui::Text("nSkinz by namazso - compiled/modified by del4y");
+		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("https://fb.com/HighDelay").x - 20);
+		ImGui::Text("https://fb.com/highdelay");
 
 		ImGui::End();
 	}
