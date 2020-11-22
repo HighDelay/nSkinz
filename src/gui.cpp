@@ -253,8 +253,8 @@ void draw_gui()
 		ImGui::Columns(1);
 
 		ImGui::Text("nSkinz by namazso - compiled/modified by del4y");
-		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("https://fb.com/HighDelay").x - 20);
-		ImGui::Text("https://fb.com/highdelay");
+		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("highdel4y").x - 20);
+		ImGui::Text("highdel4y");
 
 		ImGui::End();
 	}
