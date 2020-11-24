@@ -258,21 +258,4 @@ void draw_gui()
 
 		ImGui::End();
 	}
-
-	if(g_update_needed && ImGui::Begin("New commits since compile!", &g_update_needed,
-		{600, 400}, -1, ImGuiWindowFlags_NoSavedSettings))
-	{
-		ImGui::Columns(3, "commit", true);
-		for(const auto& commit : g_commits_since_compile)
-		{
-			ImGui::Text("%s", commit.author.c_str());
-			ImGui::NextColumn();
-			ImGui::Text("%s", commit.date.c_str());
-			ImGui::NextColumn();
-			ImGui::Text("%s", commit.message.c_str());
-			ImGui::NextColumn();
-		}
-
-		ImGui::End();
-	}
 }
