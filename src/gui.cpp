@@ -252,7 +252,7 @@ void draw_gui()
 		ImGui::PopItemWidth();
 		ImGui::Columns(1);
 
-		ImGui::Text("nSkinz by namazso - compiled/modified by del4y");
+		ImGui::Text("nSkinz - modified by del4y");
 		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("highdel4y").x - 20);
 		ImGui::Text("highdel4y");
 

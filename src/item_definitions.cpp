@@ -51,6 +51,7 @@ const game_data::weapon_info* game_data::get_weapon_info(int defindex)
 		{WEAPON_KNIFE_STILETTO,{"models/weapons/v_knife_stiletto.mdl", "knife_stiletto"}},
 		{WEAPON_KNIFE_WIDOWMAKER,{"models/weapons/v_knife_widowmaker.mdl", "knife_widowmaker"}},
 		{WEAPON_KNIFE_SKELETON,{"models/weapons/v_knife_skeleton.mdl", "knife_skeleton"}},
+		{GLOVE_BROKENFANG,{"models/weapons/v_models/arms/glove_bloodhound/v_glove_bloodhound_brokenfang.mdl"}},
 		{GLOVE_STUDDED_BLOODHOUND,{"models/weapons/v_models/arms/glove_bloodhound/v_glove_bloodhound.mdl"}},
 		{GLOVE_T_SIDE,{"models/weapons/v_models/arms/glove_fingerless/v_glove_fingerless.mdl"}},
 		{GLOVE_CT_SIDE,{"models/weapons/v_models/arms/glove_hardknuckle/v_glove_hardknuckle.mdl"}},
@@ -101,7 +102,8 @@ const std::vector<game_data::weapon_name> game_data::glove_names =
 	{GLOVE_LEATHER_WRAP, "Handwrap"},
 	{GLOVE_MOTORCYCLE, "Motorcycle"},
 	{GLOVE_SPECIALIST, "Specialist"},
-	{GLOVE_HYDRA, "Hydra"}
+	{GLOVE_HYDRA, "Hydra"},
+	{GLOVE_BROKENFANG, "Brokenfang"}
 };
 
 const std::vector<game_data::weapon_name> game_data::weapon_names =
