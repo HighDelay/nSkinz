@@ -253,8 +253,8 @@ void draw_gui()
 		ImGui::Columns(1);
 
 		ImGui::Text("nSkinz - modified by del4y");
-		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("highdel4y").x - 20);
-		ImGui::Text("highdel4y");
+		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("build : date").x - 20);
+		ImGui::Text("build : date");
 
 		ImGui::End();
 	}
