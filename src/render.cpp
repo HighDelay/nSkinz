@@ -174,6 +174,7 @@ namespace render
 
 				IDirect3DStateBlock9* state;
 				thisptr->CreateStateBlock(D3DSBT_PIXELSTATE, &state);
+				state->Capture();
 
 				//fix drawing without cl_showfps
 				thisptr->SetRenderState(D3DRS_COLORWRITEENABLE, 0xFFFFFFFF);
