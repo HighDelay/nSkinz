@@ -326,8 +326,8 @@ namespace render
 	{
 		if(!s_ready)
 			return false;
-
-		if(message_type == WM_KEYUP && w_param == VK_INSERT)
+        // Button to trigger the GUI
+		if(message_type == WM_KEYUP && w_param == VK_HOME)
 			s_active = !s_active;
 
 		if(s_active && does_imgui_handle_message(message_type))

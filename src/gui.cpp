@@ -30,6 +30,9 @@
 
 #include <imgui.h>
 #include <functional>
+#include <algorithm>
+#include <cctype>
+#include <vector>
 
 namespace ImGui
 {
@@ -43,9 +46,77 @@ namespace ImGui
 	}
 }
 
+// Case-insensitive substring search
+static bool contains_ci(const std::string& haystack, const char* needle)
+{
+	if (!needle || needle[0] == '\0') return true;
+	std::string lower_haystack = haystack;
+	std::string lower_needle = needle;
+	std::transform(lower_haystack.begin(), lower_haystack.end(), lower_haystack.begin(),
+		[](unsigned char c) { return (char)std::tolower(c); });
+	std::transform(lower_needle.begin(), lower_needle.end(), lower_needle.begin(),
+		[](unsigned char c) { return (char)std::tolower(c); });
+	return lower_haystack.find(lower_needle) != std::string::npos;
+}
+
+// Filtered combo: shows an InputText search box and a ListBox with filtered results
+static bool FilteredCombo(const char* label, int* current_item, char* search_buf, int search_buf_size,
+	const std::vector<game_data::paint_kit>& kits, std::vector<int>& filtered_indices)
+{
+	ImGui::PushID(label);
+
+	// Search input
+	char search_label[64];
+	sprintf_s(search_label, "Search##%s", label);
+	ImGui::InputText(search_label, search_buf, search_buf_size);
+
+	// Build filtered index list
+	filtered_indices.clear();
+	for (int i = 0; i < (int)kits.size(); i++)
+	{
+		if (contains_ci(kits[i].name, search_buf))
+			filtered_indices.push_back(i);
+	}
+
+	// Find current item in filtered list
+	int filtered_current = 0;
+	for (int i = 0; i < (int)filtered_indices.size(); i++)
+	{
+		if (filtered_indices[i] == *current_item)
+		{
+			filtered_current = i;
+			break;
+		}
+	}
+
+	// Show combo with filtered results
+	bool changed = false;
+	const auto* filtered_ptr = &filtered_indices;
+	const auto* kits_ptr = &kits;
+
+	struct combo_data { const std::vector<int>* indices; const std::vector<game_data::paint_kit>* kits; };
+	combo_data cd = { filtered_ptr, kits_ptr };
+
+	if (ImGui::Combo(label, &filtered_current, [](void* data, int idx) -> const char*
+	{
+		auto* cd = reinterpret_cast<combo_data*>(data);
+		return cd->kits->at(cd->indices->at(idx)).name.c_str();
+	}, &cd, (int)filtered_indices.size(), 10))
+	{
+		if (filtered_current >= 0 && filtered_current < (int)filtered_indices.size())
+		{
+			*current_item = filtered_indices[filtered_current];
+			changed = true;
+		}
+	}
+
+	ImGui::PopID();
+	return changed;
+}
+
 void draw_gui()
 {
-	ImGui::SetNextWindowSize(ImVec2(700, 400));
+	ImGui::SetNextWindowSize(ImVec2(700, 500));
 	if(ImGui::Begin("nSkinz", nullptr,
 		ImGuiWindowFlags_NoResize |
 		ImGuiWindowFlags_NoCollapse |
@@ -114,20 +185,20 @@ void draw_gui()
 			// Wear Float
 			ImGui::SliderFloat("Wear", &selected_entry.wear, FLT_MIN, 1.f, "%.10f", ImGuiSliderFlags_Logarithmic);
 
-			// Paint kit
+			// Paint kit with search
+			static char skin_search[64] = "";
+			static char glove_search[64] = "";
+			static std::vector<int> filtered;
+
 			if(selected_entry.definition_index != GLOVE_T_SIDE)
 			{
-				ImGui::Combo("Paint Kit", &selected_entry.paint_kit_vector_index, [](void* data, int idx) -> const char*
-				{
-					return game_data::skin_kits[idx].name.c_str();
-				}, nullptr, (int)game_data::skin_kits.size(), 10);
+				FilteredCombo("Paint Kit", &selected_entry.paint_kit_vector_index, skin_search, sizeof(skin_search),
+					game_data::skin_kits, filtered);
 			}
 			else
 			{
-				ImGui::Combo("Paint Kit", &selected_entry.paint_kit_vector_index, [](void* data, int idx) -> const char*
-				{
-					return game_data::glove_kits[idx].name.c_str();
-				}, nullptr, (int)game_data::glove_kits.size(), 10);
+				FilteredCombo("Paint Kit", &selected_entry.paint_kit_vector_index, glove_search, sizeof(glove_search),
+					game_data::glove_kits, filtered);
 			}
 
 			// Quality
@@ -197,10 +268,10 @@ void draw_gui()
 
 			ImGui::NextColumn();
 
-			ImGui::Combo("Sticker Kit", &selected_sticker.kit_vector_index, [](void* data, int idx) -> const char*
-			{
-				return game_data::sticker_kits.at(idx).name.c_str();
-			}, nullptr, (int)game_data::sticker_kits.size(), 10);
+			static char sticker_search[64] = "";
+			static std::vector<int> sticker_filtered;
+			FilteredCombo("Sticker Kit", &selected_sticker.kit_vector_index, sticker_search, sizeof(sticker_search),
+				game_data::sticker_kits, sticker_filtered);
 
 			ImGui::SliderFloat("Wear", &selected_sticker.wear, FLT_MIN, 1.f, "%.10f", ImGuiSliderFlags_Logarithmic);
 

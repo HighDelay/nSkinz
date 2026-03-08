@@ -17,7 +17,7 @@ Although written from scratch, nSkinz was heavily influenced by [chameleon-ng](h
 
 ## Requirements for compiling
 
-* Visual Studio 2019
+* Visual Studio 2022
 
 ## Usage
 
@@ -27,7 +27,7 @@ Currently only Windows is supported, however this may change ~~in the future~~ ~
 ```git clone --recursive https://github.com/namazso/nSkinz.git```
 * Compile using your preferred compiler
 * Inject the resulting library into the game
-* Press <kbd>Insert</kbd> to bring up the menu.
+* Press <kbd>Home</kbd> to bring up the menu.
 * Setup weapon configuration(s)
 * To override multiple weapons press the "Add" button. When an inventory update occurs always the first enabled entry applicable for that weapon will be used.
 * To save your configuration press the "Save" button. To load it later press the "Load" button.
