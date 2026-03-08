@@ -13,11 +13,15 @@
   <ItemGroup>
     <ClCompile Include="deps\imgui\imgui.cpp" />
     <ClCompile Include="deps\imgui\imgui_draw.cpp" />
+    <ClCompile Include="deps\imgui\imgui_tables.cpp" />
+    <ClCompile Include="deps\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="deps\imgui\backends\imgui_impl_dx9.cpp" />
+    <ClCompile Include="deps\imgui\backends\imgui_impl_win32.cpp" />
     <ClCompile Include="src\config.cpp" />
     <ClCompile Include="src\Hooks\FireGameEvent.cpp" />
     <ClCompile Include="src\Hooks\PostDataUpdate.cpp" />
     <ClCompile Include="src\Hooks\Sequence.cpp" />
-    <ClCompile Include="src\Imgui_impl_dx9\imgui_impl_dx9.cpp" />
+
     <ClCompile Include="src\nSkinz.cpp" />
     <ClCompile Include="src\kit_parser.cpp" />
     <ClCompile Include="src\dllmain.cpp" />
@@ -95,11 +99,11 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(ProjectDir)deps\json\include;$(ProjectDir)deps\imgui;$(ProjectDir)deps\imgui\examples\directx9_example;$(IncludePath)</IncludePath>
+    <IncludePath>$(ProjectDir)deps\json\include;$(ProjectDir)deps\imgui;$(ProjectDir)deps\imgui\backends;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(ProjectDir)deps\json\include;$(ProjectDir)deps\imgui;$(ProjectDir)deps\imgui\examples\directx9_example;$(IncludePath)</IncludePath>
+    <IncludePath>$(ProjectDir)deps\json\include;$(ProjectDir)deps\imgui;$(ProjectDir)deps\imgui\backends;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

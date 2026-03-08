@@ -33,11 +33,12 @@
 
 #include <imgui.h>
 #include <imgui_impl_dx9.h>
+#include <imgui_impl_win32.h>
 
 // Implement this somewhere
 extern void draw_gui();
 
-extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
 namespace render
 {
@@ -197,10 +198,14 @@ namespace render
 					ImGui::GetIO().MouseDrawCursor = true;
 
 					ImGui_ImplDX9_NewFrame();
+					ImGui_ImplWin32_NewFrame();
+					ImGui::NewFrame();
 
 					draw_gui();
 
+					ImGui::EndFrame();
 					ImGui::Render();
+					ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
 				}
 				else
 				{
@@ -232,11 +237,11 @@ namespace render
 		#define MED(v)  ImVec4(0.455f, 0.198f, 0.301f, v)
 		#define LOW(v)  ImVec4(0.232f, 0.201f, 0.271f, v)
 		#define BG(v)   ImVec4(0.200f, 0.220f, 0.270f, v)
-		#define TEXT(v) ImVec4(0.860f, 0.930f, 0.890f, v)
+		#define TEXT_COL(v) ImVec4(0.860f, 0.930f, 0.890f, v)
 
 		auto &style = ImGui::GetStyle();
 
-		style.ChildWindowRounding = 0.f;
+		style.ChildRounding = 0.f;
 		style.GrabRounding = 2.0f;
 		style.WindowRounding = 0.0f;
 		style.ScrollbarRounding = 16.0f;
@@ -244,10 +249,10 @@ namespace render
 		style.FrameRounding = 3.0f;
 		style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
 
-		style.Colors[ImGuiCol_Text] = TEXT(0.78f);
-		style.Colors[ImGuiCol_TextDisabled] = TEXT(0.28f);
+		style.Colors[ImGuiCol_Text] = TEXT_COL(0.78f);
+		style.Colors[ImGuiCol_TextDisabled] = TEXT_COL(0.28f);
 		style.Colors[ImGuiCol_WindowBg] = ImVec4(0.13f, 0.14f, 0.17f, 1.00f);
-		style.Colors[ImGuiCol_ChildWindowBg] = BG(0.58f);
+		style.Colors[ImGuiCol_ChildBg] = BG(0.58f);
 		style.Colors[ImGuiCol_PopupBg] = BG(0.9f);
 		style.Colors[ImGuiCol_Border] = ImVec4(0.31f, 0.31f, 1.00f, 0.00f);
 		style.Colors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
@@ -271,19 +276,19 @@ namespace render
 		style.Colors[ImGuiCol_Header] = MED(0.76f);
 		style.Colors[ImGuiCol_HeaderHovered] = MED(0.86f);
 		style.Colors[ImGuiCol_HeaderActive] = HI(1.00f);
-		style.Colors[ImGuiCol_Column] = ImVec4(0.14f, 0.16f, 0.19f, 1.00f);
-		style.Colors[ImGuiCol_ColumnHovered] = MED(0.78f);
-		style.Colors[ImGuiCol_ColumnActive] = MED(1.00f);
+		style.Colors[ImGuiCol_Separator] = ImVec4(0.14f, 0.16f, 0.19f, 1.00f);
+		style.Colors[ImGuiCol_SeparatorHovered] = MED(0.78f);
+		style.Colors[ImGuiCol_SeparatorActive] = MED(1.00f);
 		style.Colors[ImGuiCol_ResizeGrip] = ImVec4(0.47f, 0.77f, 0.83f, 0.04f);
 		style.Colors[ImGuiCol_ResizeGripHovered] = MED(0.78f);
 		style.Colors[ImGuiCol_ResizeGripActive] = MED(1.00f);
-		style.Colors[ImGuiCol_PlotLines] = TEXT(0.63f);
+		style.Colors[ImGuiCol_PlotLines] = TEXT_COL(0.63f);
 		style.Colors[ImGuiCol_PlotLinesHovered] = MED(1.00f);
-		style.Colors[ImGuiCol_PlotHistogram] = TEXT(0.63f);
+		style.Colors[ImGuiCol_PlotHistogram] = TEXT_COL(0.63f);
 		style.Colors[ImGuiCol_PlotHistogramHovered] = MED(1.00f);
 		style.Colors[ImGuiCol_TextSelectedBg] = MED(0.43f);
 		// [...]
-		style.Colors[ImGuiCol_ModalWindowDarkening] = BG(0.73f);
+		style.Colors[ImGuiCol_ModalWindowDimBg] = BG(0.73f);
 		style.Colors[ImGuiCol_Border] = ImVec4(0.539f, 0.479f, 0.255f, 0.162f);
 
 		auto& io = ImGui::GetIO();
@@ -369,9 +374,15 @@ namespace render
 		s_d3d_hook->apply_hook<Reset>(16);
 		s_d3d_hook->apply_hook<EndScene>(42);
 
-		const auto result = ImGui_ImplDX9_Init(s_hwnd, device);
-		assert(result);
-		if(result)
+		ImGui::CreateContext();
+
+		const auto result_win32 = ImGui_ImplWin32_Init(s_hwnd);
+		assert(result_win32);
+
+		const auto result_dx9 = ImGui_ImplDX9_Init(device);
+		assert(result_dx9);
+
+		if(result_win32 && result_dx9)
 			s_ready = true;
 
 		set_imgui_style();
@@ -383,6 +394,10 @@ namespace render
 			return;
 
 		s_ready = false;
+
+		ImGui_ImplDX9_Shutdown();
+		ImGui_ImplWin32_Shutdown();
+		ImGui::DestroyContext();
 
 		swap_wndproc(s_hwnd, s_original_wnd_proc);
 		delete s_d3d_hook;
