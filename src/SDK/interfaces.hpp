@@ -22,6 +22,9 @@ extern sdk::IVModelInfoClient*				g_model_info;
 #define INTERFACEVERSION_GAMEEVENTSMANAGER2	"GAMEEVENTSMANAGER002"
 extern sdk::IGameEventManager2*				g_game_event_manager;
 
+#define IENGINESOUND_CLIENT_INTERFACE_VERSION "IEngineSoundClient003"
+extern sdk::IEngineSound*                     g_engine_sound;
+
 #define ILOCALIZE_CLIENT_INTERFACE_VERSION	"Localize_001"
 extern sdk::ILocalize*						g_localize;
 

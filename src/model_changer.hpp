@@ -19,6 +19,7 @@ namespace model_changer
 {
 	extern std::vector<model_replacement> g_replacements;
 	extern bool g_enabled;
+	extern bool g_enable_custom_sounds;
 
 	// Retrieves the precached index of a custom model if a rule matches
 	int get_replacement_index(const char* original_model_name);

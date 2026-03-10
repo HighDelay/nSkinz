@@ -38,6 +38,12 @@ public:
 		typedef int(__thiscall* fn)(void*, bool, const char*, int, const void*);
 		return get_vfunc<fn>(this, 8)(this, bIsServer, value, length, userdata);
 	}
+
+	int FindStringIndex(const char* string)
+	{
+		typedef int(__thiscall* fn)(void*, const char*);
+		return get_vfunc<fn>(this, 12)(this, string);
+	}
 };
 
 class CNetworkStringTableContainer
@@ -52,7 +58,39 @@ public:
 
 static CNetworkStringTableContainer* g_string_table_container = nullptr;
 
+static std::vector<std::string> g_custom_sounds_list;
+static bool g_custom_sounds_scanned = false;
+
 static bool patch_mdl_internal_name(const char* original, const char* replacement);
+
+static void scan_sounds_directory(const std::string& base_path, const std::string& relative_path, std::vector<std::string>& results)
+{
+	WIN32_FIND_DATAA find_data;
+	HANDLE h_find = FindFirstFileA((base_path + relative_path + "*").c_str(), &find_data);
+	if (h_find == INVALID_HANDLE_VALUE) return;
+
+	do
+	{
+		const std::string name = find_data.cFileName;
+		if (name == "." || name == "..") continue;
+
+		if (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+			scan_sounds_directory(base_path, relative_path + name + "\\", results);
+		else if (name.length() > 4)
+		{
+			std::string ext = name.substr(name.length() - 4);
+			std::transform(ext.begin(), ext.end(), ext.begin(),
+				[](unsigned char c) { return (char)std::tolower(c); });
+			if (ext == ".wav" || ext == ".mp3")
+			{
+				std::string rel = relative_path + name;
+				std::replace(rel.begin(), rel.end(), '\\', '/');
+				results.push_back("custom/" + rel);
+			}
+		}
+	} while (FindNextFileA(h_find, &find_data));
+	FindClose(h_find);
+}
 
 // ========================================================
 // Raw VMT Hook for FindMDL
@@ -66,6 +104,40 @@ static DWORD* g_mdl_instance = nullptr;
 
 MDLHandle_t __fastcall hkFindMDL(void* ecx, void* edx, char* FilePath)
 {
+	if (model_changer::g_enable_custom_sounds && g_string_table_container)
+	{
+		if (!g_custom_sounds_scanned)
+		{
+			char exe_path[MAX_PATH];
+			GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
+			std::string game_dir = exe_path;
+			auto last_slash = game_dir.find_last_of("\\/");
+			if (last_slash != std::string::npos) game_dir = game_dir.substr(0, last_slash + 1);
+
+			std::string sounds_dir = game_dir + "csgo\\sound\\custom\\";
+			scan_sounds_directory(sounds_dir, "", g_custom_sounds_list);
+			g_custom_sounds_scanned = true;
+		}
+
+		if (!g_custom_sounds_list.empty())
+		{
+			auto* sound_table = g_string_table_container->FindTable("soundprecache");
+			if (sound_table)
+			{
+				if (sound_table->FindStringIndex(g_custom_sounds_list[0].c_str()) == ((int)-1))
+				{
+					for (const auto& snd : g_custom_sounds_list)
+					{
+						sound_table->AddString(false, snd.c_str());
+						sound_table->AddString(false, (std::string(")") + snd).c_str());
+						sound_table->AddString(false, (std::string("*") + snd).c_str());
+						sound_table->AddString(false, (std::string("*)") + snd).c_str());
+					}
+				}
+			}
+		}
+	}
+
 	if (model_changer::g_enabled && FilePath)
 	{
 		for (auto& rule : model_changer::g_replacements)
@@ -87,6 +159,135 @@ MDLHandle_t __fastcall hkFindMDL(void* ecx, void* edx, char* FilePath)
 		}
 	}
 	return g_original_find_mdl(ecx, FilePath);
+}
+
+// ========================================================
+// Engine Sound Hook (Custom Sounds)
+// ========================================================
+
+#include <unordered_map>
+
+typedef void(__thiscall* EmitSound1_fn)(void*, void*, int, int, const char*, unsigned int, const char*, float, int, int, int, int, const void*, const void*, void*, bool, float, int, int);
+static EmitSound1_fn g_original_emit_sound = nullptr;
+static DWORD* g_snd_original_vmt = nullptr;
+static DWORD* g_snd_custom_vmt = nullptr;
+static DWORD* g_snd_instance = nullptr;
+
+static std::unordered_map<std::string, std::string> g_sound_cache;
+
+void __fastcall hkEmitSound1(void* ecx, void* edx, void* filter, int iEntIndex, int iChannel, const char* pSoundEntry, unsigned int nSoundEntryHash, const char* pSample, float flVolume, int iSoundLevel, int nSeed, int iFlags, int iPitch, const void* pOrigin, const void* pDirection, void* pUtlVecOrigins, bool bUpdatePositions, float soundtime, int speakerentity, int unk)
+{
+	if (model_changer::g_enabled && model_changer::g_enable_custom_sounds && pSample)
+	{
+		std::string sample = pSample;
+		auto it = g_sound_cache.find(sample);
+		if (it != g_sound_cache.end())
+		{
+			// Value was found in cache. If not empty, it's a valid custom sound.
+			if (!it->second.empty())
+			{
+				void* g_engine_client = platform::get_interface("engine.dll", "VEngineClient014");
+				if (g_engine_client)
+				{
+					typedef int(__thiscall* GetLocalPlayer_fn)(void*);
+					int local_player = get_vfunc<GetLocalPlayer_fn>(g_engine_client, 12)(g_engine_client);
+
+					if (iEntIndex == local_player)
+					{
+						float vol = (flVolume <= 0.0f) ? 1.0f : flVolume;
+						char vol_str[32];
+						snprintf(vol_str, sizeof(vol_str), "%.2f", vol * 0.6f);
+
+						std::string vol_cmd = "playvol \"" + it->second + "\" " + vol_str;
+						typedef void(__thiscall* ExecuteClientCmd_fn)(void*, const char*);
+						get_vfunc<ExecuteClientCmd_fn>(g_engine_client, 108)(g_engine_client, vol_cmd.c_str());
+						return; // Mute the original default sound for the local player's custom weapon
+					}
+				}
+
+				// If not local player (or engine unavailable), play the original default sound natively in 3D
+				return g_original_emit_sound(ecx, filter, iEntIndex, iChannel, pSoundEntry, nSoundEntryHash, pSample, flVolume, iSoundLevel, nSeed, iFlags, iPitch, pOrigin, pDirection, pUtlVecOrigins, bUpdatePositions, soundtime, speakerentity, unk);
+			}
+		}
+		else
+		{
+			size_t weapon_pos = sample.find("weapons/");
+			if (weapon_pos != std::string::npos)
+			{
+				std::string bare_sample = sample.substr(weapon_pos); // Strips `)`, `~`, `*` etc entirely!
+				std::string clean_sample = "custom/" + bare_sample;
+
+				char exe_path[MAX_PATH];
+				GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
+				std::string game_dir = exe_path;
+				auto last_slash = game_dir.find_last_of("\\/");
+				if (last_slash != std::string::npos) game_dir = game_dir.substr(0, last_slash + 1);
+				std::string full_path = game_dir + "csgo\\sound\\" + clean_sample;
+
+				// Fuzzy matching for e.g., awp_01.wav -> awp1.wav
+				if (GetFileAttributesA(full_path.c_str()) == INVALID_FILE_ATTRIBUTES)
+				{
+					size_t underscore_zero = clean_sample.find("_0");
+					if (underscore_zero != std::string::npos)
+					{
+						std::string stripped_clean = clean_sample;
+						stripped_clean.erase(underscore_zero, 2);
+						std::string stripped_path = game_dir + "csgo\\sound\\" + stripped_clean;
+						if (GetFileAttributesA(stripped_path.c_str()) != INVALID_FILE_ATTRIBUTES)
+						{
+							clean_sample = stripped_clean;
+							full_path = stripped_path;
+						}
+					}
+				}
+
+				if (GetFileAttributesA(full_path.c_str()) != INVALID_FILE_ATTRIBUTES)
+				{
+					g_sound_cache[sample] = clean_sample;
+					
+					if (g_string_table_container)
+					{
+						auto* sound_table = g_string_table_container->FindTable("soundprecache");
+						if (sound_table) sound_table->AddString(false, clean_sample.c_str());
+					}
+
+					if (g_engine_sound) g_engine_sound->PrecacheSound(clean_sample.c_str(), true, true);
+					
+					void* g_engine_client = platform::get_interface("engine.dll", "VEngineClient014");
+					if (g_engine_client)
+					{
+						typedef int(__thiscall* GetLocalPlayer_fn)(void*);
+						int local_player = get_vfunc<GetLocalPlayer_fn>(g_engine_client, 12)(g_engine_client);
+
+						if (iEntIndex == local_player)
+						{
+							float vol = (flVolume <= 0.0f) ? 1.0f : flVolume;
+							char vol_str[32];
+							snprintf(vol_str, sizeof(vol_str), "%.2f", vol * 0.6f);
+
+							std::string vol_cmd = "playvol \"" + clean_sample + "\" " + vol_str;
+							typedef void(__thiscall* ExecuteClientCmd_fn)(void*, const char*);
+							get_vfunc<ExecuteClientCmd_fn>(g_engine_client, 108)(g_engine_client, vol_cmd.c_str());
+							return; // Mute the original default sound for the local player's custom weapon
+						}
+					}
+
+					// If not local player, play the original default sound natively in 3D
+					return g_original_emit_sound(ecx, filter, iEntIndex, iChannel, pSoundEntry, nSoundEntryHash, pSample, flVolume, iSoundLevel, nSeed, iFlags, iPitch, pOrigin, pDirection, pUtlVecOrigins, bUpdatePositions, soundtime, speakerentity, unk);
+				}
+				else
+				{
+					g_sound_cache[sample] = ""; // Not found on disk
+				}
+			}
+			else
+			{
+				g_sound_cache[sample] = ""; // Not a weapon sound
+			}
+		}
+	}
+
+	g_original_emit_sound(ecx, filter, iEntIndex, iChannel, pSoundEntry, nSoundEntryHash, pSample, flVolume, iSoundLevel, nSeed, iFlags, iPitch, pOrigin, pDirection, pUtlVecOrigins, bUpdatePositions, soundtime, speakerentity, unk);
 }
 
 // ========================================================
@@ -300,6 +501,7 @@ static void model_from_json(const json& j, model_replacement& o)
 		strcpy_s(o.replacement, j["replacement"].get<std::string>().c_str());
 	o.precached_index = -1;
 }
+bool model_changer::g_enable_custom_sounds = true;
 
 auto model_changer::save_config() -> void
 {
@@ -307,6 +509,7 @@ auto model_changer::save_config() -> void
 	{
 		json j;
 		j["enabled"] = g_enabled;
+		j["custom_sounds"] = g_enable_custom_sounds;
 		json rules_arr = json::array();
 		for (const auto& rule : g_replacements)
 		{
@@ -330,6 +533,7 @@ auto model_changer::load_config() -> void
 		{
 			auto j = json::parse(ifile);
 			if (j.contains("enabled")) g_enabled = j["enabled"].get<bool>();
+			if (j.contains("custom_sounds")) g_enable_custom_sounds = j["custom_sounds"].get<bool>();
 			if (j.contains("rules"))
 			{
 				g_replacements.clear();
@@ -433,6 +637,25 @@ auto model_changer::initialize() -> void
 
 	g_hook_active = true;
 	g_hook_status = "Active";
+
+	// ---- Hook IEngineSound ----
+	if (g_engine_sound)
+	{
+		g_snd_instance = (DWORD*)g_engine_sound;
+		g_snd_original_vmt = (DWORD*)*g_snd_instance;
+		int snd_vmt_size = CountVMTMethods(g_snd_original_vmt);
+		if (snd_vmt_size > 5)
+		{
+			g_snd_custom_vmt = (DWORD*)malloc(snd_vmt_size * sizeof(DWORD));
+			if (g_snd_custom_vmt)
+			{
+				memcpy(g_snd_custom_vmt, g_snd_original_vmt, snd_vmt_size * sizeof(DWORD));
+				g_original_emit_sound = (EmitSound1_fn)g_snd_original_vmt[5];
+				g_snd_custom_vmt[5] = (DWORD)&hkEmitSound1;
+				*g_snd_instance = (DWORD)g_snd_custom_vmt;
+			}
+		}
+	}
 
 	// ---- sv_pure Bypass: LooseFilesAllowed ----
 	g_filesystem = platform::get_interface("filesystem_stdio.dll", "VFileSystem017");
@@ -567,8 +790,13 @@ auto model_changer::uninitialize() -> void
 {
 	if (g_mdl_instance && g_mdl_original_vmt) *g_mdl_instance = (DWORD)g_mdl_original_vmt;
 	if (g_mdl_custom_vmt) { free(g_mdl_custom_vmt); g_mdl_custom_vmt = nullptr; }
+	
+	if (g_snd_instance && g_snd_original_vmt) *g_snd_instance = (DWORD)g_snd_original_vmt;
+	if (g_snd_custom_vmt) { free(g_snd_custom_vmt); g_snd_custom_vmt = nullptr; }
+
 	if (g_fs_instance && g_fs_original_vmt) *g_fs_instance = (DWORD)g_fs_original_vmt;
 	if (g_fs_custom_vmt) { free(g_fs_custom_vmt); g_fs_custom_vmt = nullptr; }
+	
 	if (g_cl_pure_whitelist_addr && g_cl_pure_patch_size > 0)
 	{
 		DWORD old_protect;

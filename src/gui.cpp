@@ -332,7 +332,9 @@ void draw_gui()
 		ImGui::Spacing();
 
 		ImGui::Checkbox("Enable Model Changer", &model_changer::g_enabled);
-		ImGui::SameLine();
+		ImGui::Checkbox("Enable Custom Sound Replacements (Redirects to csgo/sound/custom/)", &model_changer::g_enable_custom_sounds);
+		ImGui::Spacing();
+
 		if (ImGui::Button("Scan Installed Models"))
 			model_changer::scan_installed_models();
 		if (model_changer::g_models_scanned)
@@ -558,8 +560,8 @@ void draw_gui()
 
 		ImGui::Separator();
 		ImGui::Text("nSkinz for CSGO Legacy - modified by HighDel4y");
-		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("build : 09/03/26").x - 20);
-		ImGui::Text("build : 09/03/26");
+		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("build : 10/03/26").x - 20);
+		ImGui::Text("build : 10/03/26");
 
 		ImGui::End();
 	}
