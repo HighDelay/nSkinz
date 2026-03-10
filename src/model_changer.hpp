@@ -12,6 +12,7 @@ struct model_replacement
 	char original[128] = "";     // Substring to match in the model path
 	char replacement[256] = "";  // Full replacement path
 	int precached_index = -1;    // Cached model index after precaching
+	bool is_patched = false;     // Whether internal name is patched in the .mdl header
 };
 
 namespace model_changer

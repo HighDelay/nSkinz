@@ -52,6 +52,8 @@ public:
 
 static CNetworkStringTableContainer* g_string_table_container = nullptr;
 
+static bool patch_mdl_internal_name(const char* original, const char* replacement);
+
 // ========================================================
 // Raw VMT Hook for FindMDL
 // ========================================================
@@ -66,12 +68,18 @@ MDLHandle_t __fastcall hkFindMDL(void* ecx, void* edx, char* FilePath)
 {
 	if (model_changer::g_enabled && FilePath)
 	{
-		for (const auto& rule : model_changer::g_replacements)
+		for (auto& rule : model_changer::g_replacements)
 		{
 			if (rule.enabled && rule.original[0] != '\0' && rule.replacement[0] != '\0')
 			{
 				if (strstr(FilePath, rule.original))
 				{
+					if (!rule.is_patched)
+					{
+						patch_mdl_internal_name(rule.original, rule.replacement);
+						rule.is_patched = true;
+					}
+
 					// Pass new path to original (model-frog approach)
 					return g_original_find_mdl(ecx, (char*)rule.replacement);
 				}
