@@ -30,3 +30,6 @@ extern sdk::IInputSystem*					g_input_system;
 
 extern sdk::CBaseClientState**				g_client_state;
 extern sdk::C_CS_PlayerResource**			g_player_resource;
+
+#define MDLCACHE_INTERFACE_VERSION			"MDLCache004"
+extern IMDLCache*							g_mdl_cache;

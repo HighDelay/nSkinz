@@ -25,6 +25,7 @@
 #include "render.hpp"
 #include "SDK.hpp"
 #include "Utilities/platform.hpp"
+#include "hitmarker.hpp"
 
 // Renderer for windows. Maybe sometime i'll make a linux one
 
@@ -184,24 +185,39 @@ namespace render
 
 				static void* saved_hwnd;
 
-				if (s_active)
-				{
-					if (!saved_hwnd)
-					{
-						// We could do this with cvars, but too much work to implement a whole cvar interface just for this.
-						//g_engine->ClientCmd_Unrestricted("cl_mouseenable 0");
-						//g_input_system->EnableInput(false);
-						//mouse_enabled = false;
-						std::swap(saved_hwnd, g_input_system->get_window());
-					}
+				static bool has_opened_menu = false;
+				if (s_active) has_opened_menu = true;
 
-					ImGui::GetIO().MouseDrawCursor = true;
+				if (s_active || has_opened_menu)
+				{
+					if (s_active)
+					{
+						if (!saved_hwnd)
+						{
+							std::swap(saved_hwnd, g_input_system->get_window());
+						}
+						ImGui::GetIO().MouseDrawCursor = true;
+					}
+					else
+					{
+						if (saved_hwnd)
+						{
+							g_input_system->EnableInput(true);
+							std::swap(saved_hwnd, g_input_system->get_window());
+						}
+						ImGui::GetIO().MouseDrawCursor = false;
+					}
 
 					ImGui_ImplDX9_NewFrame();
 					ImGui_ImplWin32_NewFrame();
 					ImGui::NewFrame();
 
-					draw_gui();
+					if (s_active)
+					{
+						draw_gui();
+					}
+
+					hitmarker::on_paint();
 
 					ImGui::EndFrame();
 					ImGui::Render();
@@ -211,9 +227,7 @@ namespace render
 				{
 					if (saved_hwnd)
 					{
-						//g_engine->ClientCmd_Unrestricted("cl_mouseenable 1");
-						g_input_system->EnableInput(true); //reenabling this fixed the movement.
-						//mouse_enabled = true;
+						g_input_system->EnableInput(true);
 						std::swap(saved_hwnd, g_input_system->get_window());
 					}
 				}

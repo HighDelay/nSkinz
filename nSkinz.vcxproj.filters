@@ -5,6 +5,7 @@
       <Filter>Hooks</Filter>
     </ClCompile>
     <ClCompile Include="src\nSkinz.cpp" />
+    <ClCompile Include="src\hitmarker.cpp" />
     <ClCompile Include="deps\imgui\imgui.cpp">
       <Filter>Dependency</Filter>
     </ClCompile>
@@ -79,6 +80,7 @@
       <Filter>SDK</Filter>
     </ClInclude>
     <ClInclude Include="src\nSkinz.hpp" />
+    <ClInclude Include="src\hitmarker.hpp" />
     <ClInclude Include="src\Utilities\netvar_manager.hpp">
       <Filter>Utilities</Filter>
     </ClInclude>

@@ -104,7 +104,13 @@ auto config::save() -> void
 {
 	auto of = std::ofstream("nSkinz.json");
 	if(of.good())
-		of << json(m_items);
+	{
+		json j;
+		j["items"] = m_items;
+		j["misc"]["hitmarker"] = misc.hitmarker;
+		j["misc"]["hitsound"] = misc.hitsound;
+		of << j;
+	}
 }
 
 auto config::load() -> void
@@ -114,7 +120,18 @@ auto config::load() -> void
 		auto ifile = std::ifstream("nSkinz.json");
 		if(ifile.good())
 		{
-			m_items = json::parse(ifile).get<std::vector<item_setting>>();
+			auto j = json::parse(ifile);
+			if (j.is_array())
+			{
+				m_items = j.get<std::vector<item_setting>>();
+			}
+			else if (j.is_object())
+			{
+				m_items = j.value("items", std::vector<item_setting>());
+				auto m = j.value("misc", json::object());
+				misc.hitmarker = m.value("hitmarker", false);
+				misc.hitsound = m.value("hitsound", false);
+			}
 			(*g_client_state)->ForceFullUpdate();
 		}
 	}

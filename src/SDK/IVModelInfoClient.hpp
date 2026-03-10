@@ -9,5 +9,11 @@ namespace sdk
 		virtual const model_t*	GetModel(int modelindex) const = 0;
 		virtual int				GetModelIndex(const char* name) const = 0;
 		virtual const char*		GetModelName(const model_t* model) const = 0;
+
+		void* FindOrLoadModel(const char* name)
+		{
+			typedef void*(__thiscall* fn)(void*, const char*);
+			return get_vfunc<fn>(this, 43)(this, name);
+		}
 	};
 }

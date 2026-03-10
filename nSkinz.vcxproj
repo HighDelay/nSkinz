@@ -23,6 +23,7 @@
     <ClCompile Include="src\Hooks\Sequence.cpp" />
 
     <ClCompile Include="src\nSkinz.cpp" />
+    <ClCompile Include="src\hitmarker.cpp" />
     <ClCompile Include="src\kit_parser.cpp" />
     <ClCompile Include="src\dllmain.cpp" />
     <ClCompile Include="src\sticker_changer.cpp" />
@@ -32,6 +33,7 @@
     <ClCompile Include="src\Utilities\netvar_manager.cpp" />
     <ClCompile Include="src\gui.cpp" />
     <ClCompile Include="src\item_definitions.cpp" />
+    <ClCompile Include="src\model_changer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\SDK\declarations.hpp" />
@@ -39,6 +41,7 @@
     <ClInclude Include="src\SDK\interfaces.hpp" />
     <ClInclude Include="src\item_definitions.hpp" />
     <ClInclude Include="src\nSkinz.hpp" />
+    <ClInclude Include="src\hitmarker.hpp" />
     <ClInclude Include="src\kit_parser.hpp" />
     <ClInclude Include="src\sticker_changer.hpp" />
     <ClInclude Include="src\update_check.hpp" />
@@ -64,6 +67,8 @@
     <ClInclude Include="src\SDK\IVModelInfoClient.hpp" />
     <ClInclude Include="src\Utilities\netvar_manager.hpp" />
     <ClInclude Include="src\Utilities\vmt_smart_hook.hpp" />
+    <ClInclude Include="src\model_changer.hpp" />
+    <ClInclude Include="src\SDK\IMDLCache.hpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{D93A638A-0449-48D2-90EB-77571D2C8304}</ProjectGuid>

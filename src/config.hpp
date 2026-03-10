@@ -200,6 +200,12 @@ public:
 		return m_icon_overrides.count(original) ? m_icon_overrides.at(original).data() : nullptr;
 	}
 
+	struct misc_settings 
+	{
+		bool hitmarker = false;
+		bool hitsound = false;
+	} misc;
+
 private:
 	std::vector<item_setting> m_items;
 	std::unordered_map<std::string_view, std::string_view> m_icon_overrides;

@@ -1,4 +1,6 @@
-![Screenshot](http://i.imgur.com/KfnFQrX.jpg)
+![1](/screenshots/1.png)
+![2](/screenshots/2.png)
+![3](/screenshots/3.png)
 
 ### nSkinz
 
@@ -31,6 +33,10 @@ Currently only Windows is supported, however this may change ~~in the future~~ ~
 * Setup weapon configuration(s)
 * To override multiple weapons press the "Add" button. When an inventory update occurs always the first enabled entry applicable for that weapon will be used.
 * To save your configuration press the "Save" button. To load it later press the "Load" button.
+
+## Credits
+
+* **[CSGO-FindMDL](https://github.com/kruz1337/CSGO-FindMDL)** and **[model-frog](https://github.com/cazzwastaken/model-frog)** - Inspiration for the `FindMDL` hook approach used to seamlessly swap active model handles.
 
 ## License
 

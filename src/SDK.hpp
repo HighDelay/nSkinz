@@ -14,6 +14,7 @@
 #include "SDK/IVModelInfoClient.hpp"
 #include "SDK/ILocalize.hpp"
 #include "SDK/IInputSystem.hpp"
+#include "SDK/IMDLCache.hpp"
 
 #include "SDK/interfaces.hpp"
 

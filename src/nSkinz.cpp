@@ -28,6 +28,8 @@
 #include "kit_parser.hpp"
 #include "update_check.hpp"
 #include "config.hpp"
+#include "model_changer.hpp"
+#include "hitmarker.hpp"
 
 sdk::IBaseClientDLL*		g_client;
 sdk::IClientEntityList*		g_entity_list;
@@ -39,6 +41,7 @@ sdk::IInputSystem*			g_input_system;
 
 sdk::CBaseClientState**		g_client_state;
 sdk::C_CS_PlayerResource**	g_player_resource;
+IMDLCache*					g_mdl_cache;
 
 //vmt_smart_hook*				g_client_hook;
 //vmt_smart_hook*				g_game_event_manager_hook;
@@ -106,6 +109,11 @@ auto initialize(void* instance) -> void
 
 	render::initialize();
 
+	// Model changer
+	g_mdl_cache = get_interface<IMDLCache>("datacache.dll", MDLCACHE_INTERFACE_VERSION);
+	model_changer::initialize();
+	hitmarker::initialize();
+
 	//g_client_hook = new vmt_smart_hook(g_client);
 	//g_client_hook->apply_hook<hooks::FrameStageNotify>(36);
 
@@ -130,6 +138,8 @@ auto uninitialize() -> void
 
 	//delete g_client_hook;
 	//delete g_game_event_manager_hook;
+
+	model_changer::uninitialize();
 
 	delete g_sequence_hook;
 }

@@ -27,6 +27,7 @@
 #include "../nSkinz.hpp"
 #include "../config.hpp"
 #include "../sticker_changer.hpp"
+#include "../model_changer.hpp"
 
 static auto erase_override_if_exists_by_index(const int definition_index) -> void
 {
@@ -258,14 +259,26 @@ static auto post_data_update_start(sdk::C_BasePlayer* local) -> void
 	if(!override_info)
 		return;
 
-	const auto override_model_index = g_model_info->GetModelIndex(override_info->model);
-	view_model->GetModelIndex() = override_model_index;
+	int override_model_index = g_model_info->GetModelIndex(override_info->model);
+	int custom_idx = model_changer::get_replacement_index(override_info->model);
+	
+	if (custom_idx > 0)
+	{
+		view_model->GetModelIndex() = custom_idx;
+	}
+	else
+	{
+		view_model->GetModelIndex() = override_model_index;
+	}
 
 	const auto world_model = get_entity_from_handle<sdk::CBaseWeaponWorldModel>(view_model_weapon->GetWeaponWorldModel());
 
 	if(!world_model)
 		return;
 
+	// Always use the default world model index (override_model_index + 1)
+	// because custom viewmodels almost never include custom world models.
+	// This prevents the giant red ERROR sign!
 	world_model->GetModelIndex() = override_model_index + 1;
 }
 
