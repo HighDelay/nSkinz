@@ -377,13 +377,13 @@ void draw_gui()
 		static const std::vector<std::vector<const char*>> predefined_models = {
 			{}, // placeholder for "Select Category"
 			// Knives CT
-			{ "knife_default_ct.mdl", "knife_bayonet.mdl", "knife_flip.mdl", "knife_gut.mdl",
-			  "knife_karambit.mdl", "knife_m9_bayonet.mdl", "knife_butterfly.mdl",
-			  "knife_falchion_advanced.mdl", "knife_push.mdl", "knife_survival_bowie.mdl",
-			  "knife_tactical.mdl" },
+			{ "v_knife_default_ct.mdl", "v_knife_bayonet.mdl", "v_knife_flip.mdl", "v_knife_gut.mdl",
+			  "v_knife_karambit.mdl", "v_knife_m9_bayonet.mdl", "v_knife_butterfly.mdl",
+			  "v_knife_falchion_advanced.mdl", "v_knife_push.mdl", "v_knife_survival_bowie.mdl",
+			  "v_knife_tactical.mdl" },
 			// Knives T
-			{ "knife_default_t.mdl", "knife_bayonet.mdl", "knife_flip.mdl", "knife_gut.mdl",
-			  "knife_karambit.mdl", "knife_m9_bayonet.mdl", "knife_butterfly.mdl" },
+			{ "v_knife_default_t.mdl", "v_knife_bayonet.mdl", "v_knife_flip.mdl", "v_knife_gut.mdl",
+			  "v_knife_karambit.mdl", "v_knife_m9_bayonet.mdl", "v_knife_butterfly.mdl" },
 			// Pistols
 			{ "v_pist_glock18.mdl", "v_pist_hkp2000.mdl", "v_pist_p250.mdl",
 			  "v_pist_fiveseven.mdl", "v_pist_tec9.mdl", "v_pist_deagle.mdl",
