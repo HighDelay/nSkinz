@@ -180,6 +180,36 @@ void __fastcall hkEmitSound1(void* ecx, void* edx, void* filter, int iEntIndex, 
 	if (model_changer::g_enabled && model_changer::g_enable_custom_sounds && pSample)
 	{
 		std::string sample = pSample;
+
+		bool is_weapon_modded = false;
+		size_t weapon_pos = sample.find("weapons/");
+		if (weapon_pos != std::string::npos)
+		{
+			size_t start = weapon_pos + 8; // length of "weapons/"
+			size_t end = sample.find("/", start);
+			if (end != std::string::npos)
+			{
+				std::string wpn_name = sample.substr(start, end - start);
+				for (const auto& rule : model_changer::g_replacements)
+				{
+					if (rule.enabled && rule.original[0] != '\0' && rule.replacement[0] != '\0')
+					{
+						if (strstr(rule.original, wpn_name.c_str()) != nullptr)
+						{
+							is_weapon_modded = true;
+							break;
+						}
+					}
+				}
+			}
+		}
+
+		if (weapon_pos != std::string::npos && !is_weapon_modded)
+		{
+			// If it's a weapon sound but the underlying weapon has no custom model equipped, abort the override
+			return g_original_emit_sound(ecx, filter, iEntIndex, iChannel, pSoundEntry, nSoundEntryHash, pSample, flVolume, iSoundLevel, nSeed, iFlags, iPitch, pOrigin, pDirection, pUtlVecOrigins, bUpdatePositions, soundtime, speakerentity, unk);
+		}
+
 		auto it = g_sound_cache.find(sample);
 		if (it != g_sound_cache.end())
 		{

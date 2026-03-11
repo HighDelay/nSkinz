@@ -560,8 +560,8 @@ void draw_gui()
 
 		ImGui::Separator();
 		ImGui::Text("nSkinz for CSGO Legacy - modified by HighDel4y");
-		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("build : 10/03/26").x - 20);
-		ImGui::Text("build : 10/03/26");
+		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("build : 11/03/26").x - 20);
+		ImGui::Text("build : 11/03/26");
 
 		ImGui::End();
 	}
