@@ -387,7 +387,7 @@ void draw_gui()
 			// Pistols
 			{ "v_pist_glock18.mdl", "v_pist_hkp2000.mdl", "v_pist_p250.mdl",
 			  "v_pist_fiveseven.mdl", "v_pist_tec9.mdl", "v_pist_deagle.mdl",
-			  "v_pist_elite.mdl", "v_pist_revolver.mdl", "v_pist_cz_75.mdl" },
+			  "v_pist_elite.mdl", "v_pist_revolver.mdl", "v_pist_cz_75.mdl", "v_pist_223.mdl" },
 			// Rifles
 			{ "v_rif_ak47.mdl", "v_rif_m4a1.mdl", "v_rif_m4a1_s.mdl",
 			  "v_rif_aug.mdl", "v_rif_sg556.mdl", "v_rif_famas.mdl",
@@ -560,8 +560,8 @@ void draw_gui()
 
 		ImGui::Separator();
 		ImGui::Text("nSkinz for CSGO Legacy - modified by HighDel4y");
-		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("build : 11/03/26").x - 20);
-		ImGui::Text("build : 11/03/26");
+		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("build : 19/03/26").x - 20);
+		ImGui::Text("build : 19/03/26");
 
 		ImGui::End();
 	}

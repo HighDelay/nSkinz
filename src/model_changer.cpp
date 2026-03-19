@@ -254,6 +254,33 @@ void __fastcall hkEmitSound1(void* ecx, void* edx, void* filter, int iEntIndex, 
 				if (last_slash != std::string::npos) game_dir = game_dir.substr(0, last_slash + 1);
 				std::string full_path = game_dir + "csgo\\sound\\" + clean_sample;
 
+				// Filename fuzzy matching to allow arbitrary directory structures like `custom/weapons/m4a1_s/m4a1_silencer_01.wav`
+				if (GetFileAttributesA(full_path.c_str()) == INVALID_FILE_ATTRIBUTES)
+				{
+					if (!g_custom_sounds_scanned)
+					{
+						std::string sounds_dir = game_dir + "csgo\\sound\\custom\\";
+						scan_sounds_directory(sounds_dir, "", g_custom_sounds_list);
+						g_custom_sounds_scanned = true;
+					}
+
+					auto last_slash_idx = bare_sample.find_last_of("/\\");
+					std::string just_filename = (last_slash_idx != std::string::npos) ? bare_sample.substr(last_slash_idx + 1) : bare_sample;
+
+					for (const auto& scanned : g_custom_sounds_list)
+					{
+						if (scanned.length() >= just_filename.length())
+						{
+							if (scanned.compare(scanned.length() - just_filename.length(), just_filename.length(), just_filename) == 0)
+							{
+								clean_sample = scanned;
+								full_path = game_dir + "csgo\\sound\\" + clean_sample;
+								break;
+							}
+						}
+					}
+				}
+
 				// Fuzzy matching for e.g., awp_01.wav -> awp1.wav
 				if (GetFileAttributesA(full_path.c_str()) == INVALID_FILE_ATTRIBUTES)
 				{
