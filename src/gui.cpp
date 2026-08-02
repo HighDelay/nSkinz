@@ -32,6 +32,10 @@
 #include <functional>
 #include <algorithm>
 #include <cctype>
+#include <cstring>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 #include "model_changer.hpp"
 
@@ -47,17 +51,17 @@ namespace ImGui
 	}
 }
 
-// Case-insensitive substring search
-static bool contains_ci(const std::string& haystack, const char* needle)
+// Allocation-free case-insensitive substring search for live UI filters.
+static bool contains_ci(std::string_view haystack, std::string_view needle)
 {
-	if (!needle || needle[0] == '\0') return true;
-	std::string lower_haystack = haystack;
-	std::string lower_needle = needle;
-	std::transform(lower_haystack.begin(), lower_haystack.end(), lower_haystack.begin(),
-		[](unsigned char c) { return (char)std::tolower(c); });
-	std::transform(lower_needle.begin(), lower_needle.end(), lower_needle.begin(),
-		[](unsigned char c) { return (char)std::tolower(c); });
-	return lower_haystack.find(lower_needle) != std::string::npos;
+	if (needle.empty())
+		return true;
+	return std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
+		[](char left, char right)
+		{
+			return std::tolower(static_cast<unsigned char>(left))
+				== std::tolower(static_cast<unsigned char>(right));
+		}) != haystack.end();
 }
 
 // Filtered combo: shows an InputText search box and a ListBox with filtered results
@@ -115,13 +119,579 @@ static bool FilteredCombo(const char* label, int* current_item, char* search_buf
 	return changed;
 }
 
+namespace
+{
+	struct model_target_preset
+	{
+		int category;
+		const char* label;
+		const char* match;
+	};
+
+	static const char* const model_target_categories[] =
+	{
+		"All targets",
+		"Knives",
+		"Pistols",
+		"Rifles & snipers",
+		"SMGs",
+		"Heavy weapons",
+		"Player models",
+		"Arms & gloves"
+	};
+
+	// These are match strings, not replacement paths. Short family matches are
+	// intentional for player variants; enabled rules are evaluated top to bottom.
+	static const model_target_preset model_target_presets[] =
+	{
+		{ 1, "Any knife viewmodel", "models/weapons/v_knife_" },
+		{ 1, "Default knife (CT)", "v_knife_default_ct.mdl" },
+		{ 1, "Default knife (T)", "v_knife_default_t.mdl" },
+		{ 1, "Bayonet", "v_knife_bayonet.mdl" },
+		{ 1, "Classic Knife", "v_knife_css.mdl" },
+		{ 1, "Flip Knife", "v_knife_flip.mdl" },
+		{ 1, "Gut Knife", "v_knife_gut.mdl" },
+		{ 1, "Karambit", "v_knife_karam.mdl" },
+		{ 1, "M9 Bayonet", "v_knife_m9_bay.mdl" },
+		{ 1, "Huntsman Knife", "v_knife_tactical.mdl" },
+		{ 1, "Falchion Knife", "v_knife_falchion_advanced.mdl" },
+		{ 1, "Bowie Knife", "v_knife_survival_bowie.mdl" },
+		{ 1, "Butterfly Knife", "v_knife_butterfly.mdl" },
+		{ 1, "Shadow Daggers", "v_knife_push.mdl" },
+		{ 1, "Paracord Knife", "v_knife_cord.mdl" },
+		{ 1, "Survival Knife", "v_knife_canis.mdl" },
+		{ 1, "Ursus Knife", "v_knife_ursus.mdl" },
+		{ 1, "Navaja Knife", "v_knife_gypsy_jackknife.mdl" },
+		{ 1, "Nomad Knife", "v_knife_outdoor.mdl" },
+		{ 1, "Stiletto Knife", "v_knife_stiletto.mdl" },
+		{ 1, "Talon Knife", "v_knife_widowmaker.mdl" },
+		{ 1, "Skeleton Knife", "v_knife_skeleton.mdl" },
+
+		{ 2, "Desert Eagle", "v_pist_deagle.mdl" },
+		{ 2, "Dual Berettas", "v_pist_elite.mdl" },
+		{ 2, "Five-SeveN", "v_pist_fiveseven.mdl" },
+		{ 2, "Glock-18", "v_pist_glock18.mdl" },
+		{ 2, "P2000", "v_pist_hkp2000.mdl" },
+		{ 2, "P250", "v_pist_p250.mdl" },
+		{ 2, "Tec-9", "v_pist_tec9.mdl" },
+		{ 2, "USP-S", "v_pist_223.mdl" },
+		{ 2, "CZ75-Auto", "v_pist_cz_75.mdl" },
+		{ 2, "R8 Revolver", "v_pist_revolver.mdl" },
+
+		{ 3, "AK-47", "v_rif_ak47.mdl" },
+		{ 3, "AUG", "v_rif_aug.mdl" },
+		{ 3, "FAMAS", "v_rif_famas.mdl" },
+		{ 3, "Galil AR", "v_rif_galilar.mdl" },
+		{ 3, "M4A4", "v_rif_m4a1.mdl" },
+		{ 3, "M4A1-S", "v_rif_m4a1_s.mdl" },
+		{ 3, "SG 553", "v_rif_sg556.mdl" },
+		{ 3, "AWP", "v_snip_awp.mdl" },
+		{ 3, "SSG 08", "v_snip_ssg08.mdl" },
+		{ 3, "SCAR-20", "v_snip_scar20.mdl" },
+		{ 3, "G3SG1", "v_snip_g3sg1.mdl" },
+
+		{ 4, "MP9", "v_smg_mp9.mdl" },
+		{ 4, "MAC-10", "v_smg_mac10.mdl" },
+		{ 4, "MP7", "v_smg_mp7.mdl" },
+		{ 4, "MP5-SD", "v_smg_mp5sd.mdl" },
+		{ 4, "UMP-45", "v_smg_ump45.mdl" },
+		{ 4, "P90", "v_smg_p90.mdl" },
+		{ 4, "PP-Bizon", "v_smg_bizon.mdl" },
+
+		{ 5, "Nova", "v_shot_nova.mdl" },
+		{ 5, "XM1014", "v_shot_xm1014.mdl" },
+		{ 5, "Sawed-Off", "v_shot_sawedoff.mdl" },
+		{ 5, "MAG-7", "v_shot_mag7.mdl" },
+		{ 5, "M249", "v_mach_m249.mdl" },
+		{ 5, "Negev", "v_mach_negev.mdl" },
+
+		{ 6, "Any CT player variant", "/ctm_" },
+		{ 6, "Any T player variant", "/tm_" },
+		{ 6, "FBI family (CT)", "ctm_fbi" },
+		{ 6, "GIGN family (CT)", "ctm_gign" },
+		{ 6, "GSG-9 family (CT)", "ctm_gsg9" },
+		{ 6, "IDF family (CT)", "ctm_idf" },
+		{ 6, "SAS family (CT)", "ctm_sas" },
+		{ 6, "SEAL Team 6 family (CT)", "ctm_st6" },
+		{ 6, "SWAT family (CT)", "ctm_swat" },
+		{ 6, "Anarchist family (T)", "tm_anarchist" },
+		{ 6, "Balkan family (T)", "tm_balkan" },
+		{ 6, "Leet family (T)", "tm_leet" },
+		{ 6, "Phoenix family (T)", "tm_phoenix" },
+		{ 6, "Pirate family (T)", "tm_pirate" },
+		{ 6, "Professional family (T)", "tm_professional" },
+		{ 6, "Separatist family (T)", "tm_separatist" },
+
+		{ 7, "Any arms model", "/arms/" },
+		{ 7, "Default gloves (CT)", "v_glove_hardknuckle.mdl" },
+		{ 7, "Default gloves (T)", "v_glove_fingerless.mdl" },
+		{ 7, "Bloodhound gloves", "v_glove_bloodhound.mdl" },
+		{ 7, "Broken Fang gloves", "v_glove_bloodhound_brokenfang.mdl" },
+		{ 7, "Hydra gloves", "v_glove_bloodhound_hydra.mdl" },
+		{ 7, "Hand Wraps", "v_glove_handwrap_leathery.mdl" },
+		{ 7, "Moto Gloves", "v_glove_motorcycle.mdl" },
+		{ 7, "Specialist Gloves", "v_glove_specialist.mdl" },
+		{ 7, "Sport Gloves", "v_glove_sporty.mdl" },
+		{ 7, "Driver Gloves", "v_glove_slick.mdl" }
+	};
+
+	template <size_t Size>
+	static bool set_model_rule_text(char (&destination)[Size], const char* value, model_replacement& rule)
+	{
+		if (!value || std::strcmp(destination, value) == 0)
+			return false;
+		strncpy_s(destination, value, _TRUNCATE);
+		rule.precached_index = -1;
+		rule.is_patched = false;
+		return true;
+	}
+
+	static void invalidate_model_rule(model_replacement& rule)
+	{
+		rule.precached_index = -1;
+		rule.is_patched = false;
+	}
+
+	static const char* model_basename(const char* path)
+	{
+		if (!path || path[0] == '\0')
+			return "";
+		const auto slash = std::strrchr(path, '/');
+		const auto backslash = std::strrchr(path, '\\');
+		const auto separator = !slash ? backslash : (!backslash || slash > backslash ? slash : backslash);
+		return separator ? separator + 1 : path;
+	}
+
+	static bool equals_ci(const std::string& left, const char* right)
+	{
+		if (!right || left.size() != std::strlen(right))
+			return false;
+		for (size_t i = 0; i < left.size(); ++i)
+		{
+			if (std::tolower(static_cast<unsigned char>(left[i]))
+				!= std::tolower(static_cast<unsigned char>(right[i])))
+				return false;
+		}
+		return true;
+	}
+
+	static bool has_mdl_extension(const char* path)
+	{
+		if (!path)
+			return false;
+		const auto length = std::strlen(path);
+		return length >= 4
+			&& std::tolower(static_cast<unsigned char>(path[length - 4])) == '.'
+			&& std::tolower(static_cast<unsigned char>(path[length - 3])) == 'm'
+			&& std::tolower(static_cast<unsigned char>(path[length - 2])) == 'd'
+			&& std::tolower(static_cast<unsigned char>(path[length - 1])) == 'l';
+	}
+
+	static bool matches_model_type(const std::string& path, int type)
+	{
+		switch (type)
+		{
+		case 1: return contains_ci(path, "models/weapons/");
+		case 2: return contains_ci(path, "models/player/");
+		case 3: return contains_ci(path, "/arms/") || contains_ci(path, "glove");
+		default: return true;
+		}
+	}
+
+	static int suggested_model_type(const char* match)
+	{
+		if (!match)
+			return 0;
+		if (std::strstr(match, "ctm_") || std::strstr(match, "tm_"))
+			return 2;
+		if (std::strstr(match, "glove") || std::strstr(match, "/arms/"))
+			return 3;
+		return 1;
+	}
+
+	static const model_target_preset* find_target_preset(const char* match)
+	{
+		if (!match)
+			return nullptr;
+		for (const auto& preset : model_target_presets)
+			if (std::strcmp(match, preset.match) == 0)
+				return &preset;
+		return nullptr;
+	}
+
+	static ImVec4 operation_color(model_changer::operation_status status)
+	{
+		switch (status)
+		{
+		case model_changer::operation_status::success: return ImVec4(0.35f, 0.95f, 0.45f, 1.0f);
+		case model_changer::operation_status::warning: return ImVec4(1.0f, 0.78f, 0.28f, 1.0f);
+		case model_changer::operation_status::error: return ImVec4(1.0f, 0.35f, 0.35f, 1.0f);
+		default: return ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+		}
+	}
+
+	static void draw_model_changer_tab()
+	{
+		auto& rules = model_changer::g_replacements;
+		static int selected_rule = -1;
+		static int target_category = 0;
+		static int installed_type = 0;
+		static char rule_search[64] = "";
+		static char target_search[64] = "";
+		static char installed_search[96] = "";
+		static std::vector<int> filtered_models;
+		static bool initial_scan_done = false;
+
+		if (!initial_scan_done)
+		{
+			initial_scan_done = true;
+			if (!model_changer::g_models_scanned)
+				model_changer::scan_installed_models();
+		}
+
+		if (rules.empty())
+			selected_rule = -1;
+		else
+			selected_rule = std::clamp(selected_rule < 0 ? 0 : selected_rule, 0, static_cast<int>(rules.size()) - 1);
+
+		// Compact global controls and diagnostics.
+		if (ImGui::BeginChild("##model_status", ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 2.65f), ImGuiChildFlags_Borders))
+		{
+			ImGui::Checkbox("Enable replacements", &model_changer::g_enabled);
+			ImGui::SameLine();
+			ImGui::Checkbox("Custom weapon sounds", &model_changer::g_enable_custom_sounds);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("Redirect matching local weapon sounds to csgo/sound/custom/.");
+
+			const auto active_color = ImVec4(0.35f, 0.95f, 0.45f, 1.0f);
+			const auto failed_color = ImVec4(1.0f, 0.35f, 0.35f, 1.0f);
+			ImGui::TextColored(model_changer::g_hook_active ? active_color : failed_color,
+				"FindMDL: %s", model_changer::g_hook_active ? "Active" : "Unavailable");
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", model_changer::g_hook_status);
+			ImGui::SameLine();
+			ImGui::TextDisabled("|");
+			ImGui::SameLine();
+			ImGui::TextColored(model_changer::g_svpure_bypassed ? active_color : failed_color,
+				"Custom files: %s", model_changer::g_svpure_bypassed ? "Allowed" : "Unavailable");
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("%s", model_changer::g_svpure_status);
+
+			char refresh_label[96];
+			snprintf(refresh_label, sizeof(refresh_label), "%s (%d)",
+				model_changer::g_models_scanned ? "Refresh model list" : "Scan installed models",
+				static_cast<int>(model_changer::g_installed_models.size()));
+			const float refresh_width = ImGui::CalcTextSize(refresh_label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+			ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - refresh_width);
+			if (ImGui::Button(refresh_label))
+				model_changer::scan_installed_models();
+			if (ImGui::IsItemHovered() && !model_changer::g_models_root.empty())
+				ImGui::SetTooltip("Scanned folder:\n%s", model_changer::g_models_root.c_str());
+		}
+		ImGui::EndChild();
+
+		const float footer_height = ImGui::GetFrameHeightWithSpacing() * 2.65f;
+		if (ImGui::BeginChild("##model_workspace", ImVec2(0, -footer_height)))
+		{
+			const float available_width = ImGui::GetContentRegionAvail().x;
+			const float list_width = std::clamp(available_width * 0.36f, 285.0f, 340.0f);
+
+			if (ImGui::BeginChild("##model_rules", ImVec2(list_width, 0), ImGuiChildFlags_Borders))
+			{
+				ImGui::Text("Rules (%d)", static_cast<int>(rules.size()));
+				ImGui::SameLine();
+				ImGui::TextDisabled("top match wins");
+				ImGui::SetNextItemWidth(-FLT_MIN);
+				ImGui::InputTextWithHint("##rule_search", "Filter rules...", rule_search, sizeof(rule_search));
+
+				const float controls_height = ImGui::GetFrameHeightWithSpacing() * 2.15f;
+				if (ImGui::BeginChild("##rule_rows", ImVec2(0, -controls_height)))
+				{
+					int visible_rules = 0;
+					for (int i = 0; i < static_cast<int>(rules.size()); ++i)
+					{
+						auto& rule = rules[i];
+						if (!contains_ci(rule.original, rule_search) && !contains_ci(rule.replacement, rule_search))
+							continue;
+
+						++visible_rules;
+						ImGui::PushID(i);
+						ImGui::Checkbox("##enabled", &rule.enabled);
+						if (ImGui::IsItemHovered())
+							ImGui::SetTooltip(rule.enabled ? "Disable this rule" : "Enable this rule");
+						ImGui::SameLine();
+
+						char row_label[512];
+						snprintf(row_label, sizeof(row_label), "%02d  %s\n     -> %s", i + 1,
+							rule.original[0] ? model_basename(rule.original) : "Choose target",
+							rule.replacement[0] ? model_basename(rule.replacement) : "Choose replacement");
+						const bool incomplete = rule.original[0] == '\0' || rule.replacement[0] == '\0';
+						const ImVec4 row_color = !rule.enabled ? ImVec4(0.55f, 0.55f, 0.55f, 1.0f)
+							: incomplete ? ImVec4(1.0f, 0.72f, 0.25f, 1.0f)
+							: rule.precached_index > 0 ? ImVec4(0.45f, 0.95f, 0.5f, 1.0f)
+							: ImGui::GetStyleColorVec4(ImGuiCol_Text);
+						ImGui::PushStyleColor(ImGuiCol_Text, row_color);
+						if (ImGui::Selectable(row_label, selected_rule == i, 0,
+							ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 2.1f)))
+							selected_rule = i;
+						ImGui::PopStyleColor();
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::BeginTooltip();
+							ImGui::Text("Match: %s", rule.original[0] ? rule.original : "(not set)");
+							ImGui::Text("Use:   %s", rule.replacement[0] ? rule.replacement : "(not set)");
+							ImGui::TextDisabled(rule.precached_index > 0 ? "Applied (index %d)" : "Not applied to the current map", rule.precached_index);
+							ImGui::EndTooltip();
+						}
+						ImGui::PopID();
+					}
+					if (visible_rules == 0)
+						ImGui::TextDisabled(rules.empty() ? "No rules yet." : "No rules match this filter.");
+				}
+				ImGui::EndChild();
+
+				const float gap = ImGui::GetStyle().ItemSpacing.x;
+				const float third = (ImGui::GetContentRegionAvail().x - gap * 2.0f) / 3.0f;
+				if (ImGui::Button("+ New", ImVec2(third, 0)))
+				{
+					rules.emplace_back();
+					selected_rule = static_cast<int>(rules.size()) - 1;
+				}
+				ImGui::SameLine();
+				ImGui::BeginDisabled(selected_rule < 0);
+				if (ImGui::Button("Duplicate", ImVec2(third, 0)))
+				{
+					auto copy = rules[selected_rule];
+					invalidate_model_rule(copy);
+					rules.insert(rules.begin() + selected_rule + 1, copy);
+					++selected_rule;
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("Remove", ImVec2(third, 0)))
+				{
+					rules.erase(rules.begin() + selected_rule);
+					selected_rule = rules.empty() ? -1 : (std::min)(selected_rule, static_cast<int>(rules.size()) - 1);
+				}
+				ImGui::EndDisabled();
+
+				const float half = (ImGui::GetContentRegionAvail().x - gap) / 2.0f;
+				ImGui::BeginDisabled(selected_rule <= 0);
+				if (ImGui::Button("Move up", ImVec2(half, 0)))
+				{
+					std::swap(rules[selected_rule], rules[selected_rule - 1]);
+					--selected_rule;
+				}
+				ImGui::EndDisabled();
+				ImGui::SameLine();
+				ImGui::BeginDisabled(selected_rule < 0 || selected_rule >= static_cast<int>(rules.size()) - 1);
+				if (ImGui::Button("Move down", ImVec2(half, 0)))
+				{
+					std::swap(rules[selected_rule], rules[selected_rule + 1]);
+					++selected_rule;
+				}
+				ImGui::EndDisabled();
+			}
+			ImGui::EndChild();
+
+			ImGui::SameLine();
+			if (ImGui::BeginChild("##model_editor", ImVec2(0, 0), ImGuiChildFlags_Borders))
+			{
+				if (selected_rule < 0)
+				{
+					ImGui::Text("Create a rule to get started");
+					ImGui::TextWrapped("A rule matches an original game model and redirects it to one of the loose .mdl files installed under the game folder.");
+					if (ImGui::Button("Create first rule"))
+					{
+						rules.emplace_back();
+						selected_rule = 0;
+					}
+				}
+				else
+				{
+					auto& rule = rules[selected_rule];
+					ImGui::Checkbox("Rule enabled", &rule.enabled);
+					ImGui::SameLine();
+					if (!rule.enabled)
+						ImGui::TextDisabled("Disabled");
+					else if (rule.original[0] == '\0' || rule.replacement[0] == '\0')
+						ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.25f, 1.0f), "Incomplete");
+					else if (rule.precached_index > 0)
+						ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.45f, 1.0f), "Applied (model index %d)", rule.precached_index);
+					else
+						ImGui::TextColored(ImVec4(0.45f, 0.75f, 1.0f, 1.0f), "Ready to apply");
+					ImGui::Separator();
+
+					ImGui::Text("1. Choose the original model");
+					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.42f);
+					ImGui::Combo("##target_category", &target_category, model_target_categories, IM_ARRAYSIZE(model_target_categories));
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("Filter the target presets by model type.");
+					ImGui::SameLine();
+
+					const auto selected_preset = find_target_preset(rule.original);
+					const char* target_preview = selected_preset ? selected_preset->label
+						: (rule.original[0] ? "Custom match" : "Choose a target...");
+					ImGui::SetNextItemWidth(-FLT_MIN);
+					if (ImGui::BeginCombo("##target_preset", target_preview))
+					{
+						ImGui::SetNextItemWidth(-FLT_MIN);
+						ImGui::InputTextWithHint("##target_filter", "Search presets...", target_search, sizeof(target_search));
+						ImGui::Separator();
+						int shown = 0;
+						for (const auto& preset : model_target_presets)
+						{
+							if ((target_category != 0 && preset.category != target_category)
+								|| (!contains_ci(preset.label, target_search) && !contains_ci(preset.match, target_search)))
+								continue;
+							++shown;
+							const bool selected = std::strcmp(rule.original, preset.match) == 0;
+							if (ImGui::Selectable(preset.label, selected))
+							{
+								set_model_rule_text(rule.original, preset.match, rule);
+								installed_type = suggested_model_type(preset.match);
+							}
+							if (ImGui::IsItemHovered())
+								ImGui::SetTooltip("Matches paths containing:\n%s", preset.match);
+							if (selected)
+								ImGui::SetItemDefaultFocus();
+						}
+						if (shown == 0)
+							ImGui::TextDisabled("No presets match the filter.");
+						ImGui::EndCombo();
+					}
+
+					ImGui::SetNextItemWidth(-FLT_MIN);
+					if (ImGui::InputTextWithHint("##original_path", "Match substring (advanced)", rule.original, sizeof(rule.original)))
+						invalidate_model_rule(rule);
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("The first enabled rule whose substring occurs in the requested model path wins.");
+
+					ImGui::Separator();
+					ImGui::Text("2. Choose the replacement model");
+					static const char* const installed_types[] = { "All models", "Weapons", "Players", "Arms / gloves" };
+					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.34f);
+					ImGui::Combo("##installed_type", &installed_type, installed_types, IM_ARRAYSIZE(installed_types));
+					ImGui::SameLine();
+					ImGui::SetNextItemWidth(-FLT_MIN);
+					ImGui::InputTextWithHint("##installed_search", "Search installed models...", installed_search, sizeof(installed_search));
+
+					filtered_models.clear();
+					for (int i = 0; i < static_cast<int>(model_changer::g_installed_models.size()); ++i)
+					{
+						const auto& model = model_changer::g_installed_models[i];
+						if (matches_model_type(model, installed_type) && contains_ci(model, installed_search))
+							filtered_models.push_back(i);
+					}
+
+					const float model_list_height = ImGui::GetTextLineHeightWithSpacing() * 5.4f;
+					if (ImGui::BeginListBox("##installed_models", ImVec2(-FLT_MIN, model_list_height)))
+					{
+						ImGuiListClipper clipper;
+						clipper.Begin(static_cast<int>(filtered_models.size()));
+						while (clipper.Step())
+						{
+							for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row)
+							{
+								const auto& model = model_changer::g_installed_models[filtered_models[row]];
+								const bool selected = equals_ci(model, rule.replacement);
+								if (ImGui::Selectable(model.c_str(), selected))
+									set_model_rule_text(rule.replacement, model.c_str(), rule);
+								if (ImGui::IsItemHovered())
+									ImGui::SetTooltip("Click to use:\n%s", model.c_str());
+							}
+						}
+						if (filtered_models.empty())
+							ImGui::TextDisabled(model_changer::g_models_scanned
+								? "No installed models match these filters."
+								: "Scan installed models to browse replacements.");
+						ImGui::EndListBox();
+					}
+					ImGui::TextDisabled("%d shown / %d installed", static_cast<int>(filtered_models.size()),
+						static_cast<int>(model_changer::g_installed_models.size()));
+
+					ImGui::SetNextItemWidth(-FLT_MIN);
+					if (ImGui::InputTextWithHint("##replacement_path", "Replacement path (models/.../*.mdl)",
+						rule.replacement, sizeof(rule.replacement)))
+						invalidate_model_rule(rule);
+
+					bool installed = false;
+					for (const auto& model : model_changer::g_installed_models)
+					{
+						if (equals_ci(model, rule.replacement))
+						{
+							installed = true;
+							break;
+						}
+					}
+
+					int shadowing_rule = -1;
+					if (rule.original[0])
+					{
+						for (int i = 0; i < selected_rule; ++i)
+						{
+							if (rules[i].enabled && rules[i].original[0]
+								&& std::strstr(rule.original, rules[i].original))
+							{
+								shadowing_rule = i;
+								break;
+							}
+						}
+					}
+
+					if (rule.original[0] == '\0' || rule.replacement[0] == '\0')
+						ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.25f, 1.0f), "Choose both paths before applying.");
+					else if (!has_mdl_extension(rule.replacement))
+						ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Replacement must end in .mdl.");
+					else if (model_changer::g_models_scanned && !installed)
+						ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.25f, 1.0f), "This path was not found in the loose model scan.");
+					else
+						ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.45f, 1.0f), "Rule paths look ready.");
+
+					if (shadowing_rule >= 0)
+						ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.25f, 1.0f),
+							"Rule %d has a broader earlier match; move this rule above it.", shadowing_rule + 1);
+				}
+			}
+			ImGui::EndChild();
+		}
+		ImGui::EndChild();
+
+		const float gap = ImGui::GetStyle().ItemSpacing.x;
+		const float total_width = ImGui::GetContentRegionAvail().x;
+		const float apply_width = total_width * 0.5f;
+		const float side_width = (total_width - apply_width - gap * 2.0f) / 2.0f;
+		if (ImGui::Button("Apply to current map", ImVec2(apply_width, 0)))
+		{
+			model_changer::precache_models();
+			if (model_changer::g_last_operation_status != model_changer::operation_status::error && g_engine)
+				g_engine->ClientCmd_Unrestricted("record x;stop");
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("Precache enabled models and refresh the current view models.");
+		ImGui::SameLine();
+		if (ImGui::Button("Save rules", ImVec2(side_width, 0)))
+			model_changer::save_config();
+		ImGui::SameLine();
+		if (ImGui::Button("Load rules", ImVec2(side_width, 0)))
+		{
+			model_changer::load_config();
+			selected_rule = model_changer::g_replacements.empty() ? -1
+				: std::clamp(selected_rule < 0 ? 0 : selected_rule, 0,
+					static_cast<int>(model_changer::g_replacements.size()) - 1);
+		}
+
+		ImGui::PushStyleColor(ImGuiCol_Text, operation_color(model_changer::g_last_operation_status));
+		ImGui::TextWrapped("%s", model_changer::g_last_operation_message.c_str());
+		ImGui::PopStyleColor();
+	}
+}
+
 void draw_gui()
 {
-	ImGui::SetNextWindowSize(ImVec2(750, 550));
+	ImGui::SetNextWindowSize(ImVec2(900, 620));
 	if(ImGui::Begin("nSkinz", nullptr,
 		ImGuiWindowFlags_NoResize |
 		ImGuiWindowFlags_NoCollapse |
-		ImGuiWindowFlags_AlwaysAutoResize |
 		ImGuiWindowFlags_NoSavedSettings))
 	{
 
@@ -329,208 +899,7 @@ void draw_gui()
 	// ========== MODEL CHANGER TAB ==========
 	if (ImGui::BeginTabItem("Model Changer"))
 	{
-		ImGui::Spacing();
-
-		ImGui::Checkbox("Enable Model Changer", &model_changer::g_enabled);
-		ImGui::Checkbox("Enable Custom Sound Replacements (Redirects to csgo/sound/custom/)", &model_changer::g_enable_custom_sounds);
-		ImGui::Spacing();
-
-		if (ImGui::Button("Scan Installed Models"))
-			model_changer::scan_installed_models();
-		if (model_changer::g_models_scanned)
-		{
-			ImGui::SameLine();
-			ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "(%d models)", (int)model_changer::g_installed_models.size());
-		}
-
-		ImGui::Text("Hook Status:");
-		ImGui::SameLine();
-		if (model_changer::g_hook_active)
-			ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "%s", model_changer::g_hook_status);
-		else
-			ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", model_changer::g_hook_status);
-
-		ImGui::Text("sv_pure Bypass:");
-		ImGui::SameLine();
-		if (model_changer::g_svpure_bypassed)
-			ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "%s", model_changer::g_svpure_status);
-		else
-			ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", model_changer::g_svpure_status);
-
-		ImGui::Spacing();
-
-		// --- Predefined model categories for quick selection ---
-		static const char* categories[] = {
-			"-- Select Category --",
-			"Knives (CT)",
-			"Knives (T)",
-			"Pistols",
-			"Rifles",
-			"SMGs",
-			"Shotguns",
-			"Machine Guns",
-			"Player Models (CT)",
-			"Player Models (T)"
-		};
-
-		// Predefined original model substrings per category
-		static const std::vector<std::vector<const char*>> predefined_models = {
-			{}, // placeholder for "Select Category"
-			// Knives CT
-			{ "v_knife_default_ct.mdl", "v_knife_bayonet.mdl", "v_knife_flip.mdl", "v_knife_gut.mdl",
-			  "v_knife_karambit.mdl", "v_knife_m9_bayonet.mdl", "v_knife_butterfly.mdl",
-			  "v_knife_falchion_advanced.mdl", "v_knife_push.mdl", "v_knife_survival_bowie.mdl",
-			  "v_knife_tactical.mdl" },
-			// Knives T
-			{ "v_knife_default_t.mdl", "v_knife_bayonet.mdl", "v_knife_flip.mdl", "v_knife_gut.mdl",
-			  "v_knife_karambit.mdl", "v_knife_m9_bayonet.mdl", "v_knife_butterfly.mdl" },
-			// Pistols
-			{ "v_pist_glock18.mdl", "v_pist_hkp2000.mdl", "v_pist_p250.mdl",
-			  "v_pist_fiveseven.mdl", "v_pist_tec9.mdl", "v_pist_deagle.mdl",
-			  "v_pist_elite.mdl", "v_pist_revolver.mdl", "v_pist_cz_75.mdl", "v_pist_223.mdl" },
-			// Rifles
-			{ "v_rif_ak47.mdl", "v_rif_m4a1.mdl", "v_rif_m4a1_s.mdl",
-			  "v_rif_aug.mdl", "v_rif_sg556.mdl", "v_rif_famas.mdl",
-			  "v_rif_galilar.mdl", "v_snip_awp.mdl", "v_snip_ssg08.mdl",
-			  "v_snip_scar20.mdl", "v_snip_g3sg1.mdl" },
-			// SMGs
-			{ "v_smg_mp9.mdl", "v_smg_mac10.mdl", "v_smg_mp7.mdl",
-			  "v_smg_ump45.mdl", "v_smg_p90.mdl", "v_smg_bizon.mdl",
-			  "v_smg_mp5sd.mdl" },
-			// Shotguns
-			{ "v_shot_nova.mdl", "v_shot_xm1014.mdl", "v_shot_sawedoff.mdl",
-			  "v_shot_mag7.mdl" },
-			// Machine Guns
-			{ "v_mach_m249.mdl", "v_mach_negev.mdl" },
-			// Player Models CT
-			{ "ctm_fbi.mdl", "ctm_gign.mdl", "ctm_sas.mdl", "ctm_st6.mdl",
-			  "ctm_swat.mdl", "ctm_idf.mdl" },
-			// Player Models T
-			{ "tm_anarchist.mdl", "tm_balkan.mdl", "tm_leet.mdl",
-			  "tm_phoenix.mdl", "tm_pirate.mdl", "tm_professional.mdl",
-			  "tm_separatist.mdl" }
-		};
-
-		// --- Model replacement list ---
-		auto& rules = model_changer::g_replacements;
-		static int selected_rule = 0;
-
-		ImGui::Text("Model Replacement Rules: (%d)", (int)rules.size());
-		ImGui::Spacing();
-
-		// Add/Remove buttons
-		// Add/Remove buttons
-		if (ImGui::Button("Add Rule"))
-		{
-			rules.push_back(model_replacement());
-			selected_rule = (int)rules.size() - 1;
-		}
-
-		ImGui::Spacing();
-		ImGui::Separator();
-
-		// Display each rule
-		for (int i = 0; i < (int)rules.size(); i++)
-		{
-			auto& rule = rules[i];
-			ImGui::PushID(i);
-
-			char header_label[128];
-			if (rule.original[0] != '\0')
-				sprintf_s(header_label, "Rule #%d: %s -> %s###rule%d", i + 1, rule.original, rule.replacement[0] ? rule.replacement : "(not set)", i);
-			else
-				sprintf_s(header_label, "Rule #%d: (empty)###rule%d", i + 1, i);
-
-			if (ImGui::CollapsingHeader(header_label, ImGuiTreeNodeFlags_DefaultOpen))
-			{
-				ImGui::Checkbox("Enabled", &rule.enabled);
-				ImGui::SameLine(ImGui::GetContentRegionAvail().x - 100);
-				if (ImGui::Button("Delete Rule", ImVec2(100, 20)))
-				{
-					rules.erase(rules.begin() + i);
-					ImGui::PopID();
-					break;
-				}
-				ImGui::Spacing();
-
-				// ---- ORIGINAL MODEL ----
-				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.4f, 1.0f), "What model to replace:");
-				static int cat_index = 0;
-				ImGui::Combo("Category", &cat_index, categories, IM_ARRAYSIZE(categories));
-				if (cat_index > 0 && cat_index < (int)predefined_models.size())
-				{
-					const auto& models = predefined_models[cat_index];
-					static int model_index = 0;
-					if (model_index >= (int)models.size()) model_index = 0;
-					ImGui::Combo("Pick Original", &model_index, [](void* data, int idx) -> const char* {
-						return (*reinterpret_cast<const std::vector<const char*>*>(data))[idx];
-					}, (void*)&models, (int)models.size(), 8);
-					if (ImGui::Button("Set as Original"))
-						if (model_index >= 0 && model_index < (int)models.size())
-							strcpy_s(rule.original, models[model_index]);
-				}
-				ImGui::InputText("Original##o", rule.original, sizeof(rule.original));
-				ImGui::Spacing();
-
-				// ---- REPLACEMENT MODEL ----
-				ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.6f, 1.0f), "Replace with:");
-				if (model_changer::g_models_scanned && !model_changer::g_installed_models.empty())
-				{
-					static char mdl_search[64] = "";
-					ImGui::InputText("Search Models##s", mdl_search, sizeof(mdl_search));
-					static std::vector<int> filt;
-					filt.clear();
-					for (int j = 0; j < (int)model_changer::g_installed_models.size(); j++)
-						if (contains_ci(model_changer::g_installed_models[j], mdl_search))
-							filt.push_back(j);
-					if (!filt.empty())
-					{
-						ImGui::Text("%d matching models:", (int)filt.size());
-						static int pick = 0;
-						if (pick >= (int)filt.size()) pick = 0;
-						struct LD { const std::vector<int>* f; const std::vector<std::string>* m; };
-						LD ld = { &filt, &model_changer::g_installed_models };
-						ImGui::ListBox("##pick", &pick, [](void* d, int idx) -> const char* {
-							auto* p = reinterpret_cast<LD*>(d);
-							return p->m->at(p->f->at(idx)).c_str();
-						}, &ld, (int)filt.size(), 5);
-						if (ImGui::Button("Use as Replacement"))
-							if (pick >= 0 && pick < (int)filt.size())
-								strcpy_s(rule.replacement, model_changer::g_installed_models[filt[pick]].c_str());
-					}
-					else
-						ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "No models match search.");
-				}
-				else
-					ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.4f, 1.0f), "Click 'Scan Installed Models' to browse.");
-				ImGui::InputText("Replacement##r", rule.replacement, sizeof(rule.replacement));
-			}
-
-			ImGui::PopID();
-			ImGui::Spacing();
-		}
-
-		ImGui::Spacing();
-		ImGui::Separator();
-		ImGui::Spacing();
-
-		// Apply button
-		if (ImGui::Button("Precache & Apply", ImVec2(ImGui::GetContentRegionAvail().x, 30)))
-		{
-			model_changer::precache_models();
-			g_engine->ClientCmd_Unrestricted("record x;stop");
-		}
-
-		if (ImGui::Button("Save Config", ImVec2(ImGui::GetContentRegionAvail().x / 2 - 4, 30)))
-			model_changer::save_config();
-		ImGui::SameLine();
-		if (ImGui::Button("Load Config", ImVec2(ImGui::GetContentRegionAvail().x, 30)))
-			model_changer::load_config();
-		ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
-			"Models apply automatically. Click 'Precache & Apply' after adding new rules.");
-
-		ImGui::Spacing();
-
+		draw_model_changer_tab();
 		ImGui::EndTabItem();
 	} // End Model Changer tab
 
@@ -560,8 +929,8 @@ void draw_gui()
 
 		ImGui::Separator();
 		ImGui::Text("nSkinz for CSGO Legacy - modified by HighDel4y");
-		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("build : 19/03/26").x - 20);
-		ImGui::Text("build : 19/03/26");
+		ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("build : 23/07/26").x - 20);
+		ImGui::Text("build : 23/07/26");
 
 		ImGui::End();
 	}

@@ -5,6 +5,8 @@
 #include <cstring>
 #include <fstream>
 #include <algorithm>
+#include <stdexcept>
+#include <utility>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -14,17 +16,32 @@ namespace model_changer
 {
 	std::vector<model_replacement> g_replacements;
 	bool g_enabled = true;
+	bool g_enable_custom_sounds = true;
 	std::vector<std::string> g_installed_models;
 	bool g_models_scanned = false;
+	std::string g_models_root;
+	operation_status g_last_operation_status = operation_status::none;
+	std::string g_last_operation_message = "Ready.";
 	bool g_hook_active = false;
 	const char* g_hook_status = "Not initialized";
 	bool g_svpure_bypassed = false;
 	const char* g_svpure_status = "Not initialized";
-	char g_debug_info[512] = "Ready.";
 }
 
 // Interface pointers (defined in nSkinz.cpp)
 extern IMDLCache* g_mdl_cache;
+
+static void set_operation(model_changer::operation_status status, const std::string& message)
+{
+	model_changer::g_last_operation_status = status;
+	model_changer::g_last_operation_message = message;
+}
+
+template <size_t Size>
+static void copy_config_string(char (&destination)[Size], const std::string& source)
+{
+	strncpy_s(destination, source.c_str(), _TRUNCATE);
+}
 
 // ========================================================
 // INetworkStringTable for model precaching
@@ -74,7 +91,8 @@ static void scan_sounds_directory(const std::string& base_path, const std::strin
 		const std::string name = find_data.cFileName;
 		if (name == "." || name == "..") continue;
 
-		if (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		if ((find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+			&& !(find_data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
 			scan_sounds_directory(base_path, relative_path + name + "\\", results);
 		else if (name.length() > 4)
 		{
@@ -101,6 +119,7 @@ static FindMDL_fn g_original_find_mdl = nullptr;
 static DWORD* g_mdl_original_vmt = nullptr;
 static DWORD* g_mdl_custom_vmt = nullptr;
 static DWORD* g_mdl_instance = nullptr;
+static int g_mdl_vmt_size = 0;
 
 MDLHandle_t __fastcall hkFindMDL(void* ecx, void* edx, char* FilePath)
 {
@@ -423,6 +442,9 @@ static int CountVMTMethods(DWORD* vmt)
 // (e.g., replace 'v_' with 'c_'). If lengths do not match, it returns false.
 static bool patch_mdl_internal_name(const char* original, const char* replacement)
 {
+	if (!original || !replacement || original[0] == '\0' || replacement[0] == '\0')
+		return false;
+
 	// Extract base names (without paths or extensions)
 	std::string orig_name = original;
 	auto slash = orig_name.find_last_of("\\/");
@@ -436,7 +458,7 @@ static bool patch_mdl_internal_name(const char* original, const char* replacemen
 	dot = repl_name.find_last_of('.');
 	if (dot != std::string::npos) repl_name = repl_name.substr(0, dot);
 
-	if (orig_name.length() != repl_name.length())
+	if (orig_name.empty() || orig_name.length() != repl_name.length())
 	{
 		return false;
 	}
@@ -455,11 +477,19 @@ static bool patch_mdl_internal_name(const char* original, const char* replacemen
 	if (fopen_s(&f, full_path.c_str(), "rb") == 0 && f)
 	{
 		fseek(f, 0, SEEK_END);
-		size_t size = ftell(f);
+		const long file_size = ftell(f);
 		fseek(f, 0, SEEK_SET);
+		if (file_size <= 0)
+		{
+			fclose(f);
+			return false;
+		}
+		const auto size = static_cast<size_t>(file_size);
 		file_data.resize(size);
-		fread(file_data.data(), 1, size, f);
+		const auto bytes_read = fread(file_data.data(), 1, size, f);
 		fclose(f);
+		if (bytes_read != size)
+			return false;
 	}
 	else
 	{
@@ -474,7 +504,7 @@ static bool patch_mdl_internal_name(const char* original, const char* replacemen
 
 	int patched_count = 0;
 	// Binary replace all occurrences of orig_name with repl_name
-	for (size_t i = 0; i < file_data.size() - orig_name.length(); ++i)
+	for (size_t i = 0; i + orig_name.length() <= file_data.size(); ++i)
 	{
 		if (memcmp(&file_data[i], orig_name.data(), orig_name.length()) == 0)
 		{
@@ -501,36 +531,114 @@ static bool patch_mdl_internal_name(const char* original, const char* replacemen
 
 auto model_changer::precache_models() -> void
 {
-	if (!g_string_table_container) return;
+	if (!g_string_table_container)
+	{
+		set_operation(operation_status::error, "Apply failed: model precache table interface is unavailable.");
+		return;
+	}
+	if (!g_model_info || !g_mdl_cache)
+	{
+		set_operation(operation_status::error, "Apply failed: model interfaces are unavailable.");
+		return;
+	}
 
 	auto* precache_table = g_string_table_container->FindTable("modelprecache");
-	if (!precache_table) return;
+	if (!precache_table)
+	{
+		set_operation(operation_status::error, "Apply failed: modelprecache is not available until a map is loaded.");
+		return;
+	}
+
+	int enabled_count = 0;
+	int applied_count = 0;
+	int incomplete_count = 0;
+	int failed_count = 0;
+	int recovered_count = 0;
 
 	for (auto& rule : g_replacements)
 	{
-		if (!rule.enabled || rule.replacement[0] == '\0') continue;
+		if (!rule.enabled)
+			continue;
+
+		++enabled_count;
+		rule.precached_index = -1;
+		if (rule.original[0] == '\0' || rule.replacement[0] == '\0')
+		{
+			++incomplete_count;
+			continue;
+		}
 
 		// Patch the internal names inside the custom .mdl so it doesn't conflict with VPK
-		patch_mdl_internal_name(rule.original, rule.replacement);
+		rule.is_patched = patch_mdl_internal_name(rule.original, rule.replacement);
+
+		// Add the path once; adding duplicates needlessly grows the network string table.
+		if (precache_table->FindStringIndex(rule.replacement) == -1)
+			precache_table->AddString(false, rule.replacement);
+
+		// A failed load is sticky in MDLCache004. The fuller interface from the
+		// reference implementation lets us reset and retry that cached error.
+		auto handle = g_original_find_mdl
+			? g_original_find_mdl(g_mdl_cache, rule.replacement)
+			: g_mdl_cache->FindMDL(rule.replacement);
+		bool is_error_model = handle == MDLHANDLE_INVALID || g_mdl_cache->IsErrorModel(handle);
+		if (is_error_model && handle != MDLHANDLE_INVALID && g_mdl_vmt_size > 47)
+		{
+			g_mdl_cache->ResetErrorModelStatus(handle);
+			handle = g_original_find_mdl
+				? g_original_find_mdl(g_mdl_cache, rule.replacement)
+				: g_mdl_cache->FindMDL(rule.replacement);
+			is_error_model = handle == MDLHANDLE_INVALID || g_mdl_cache->IsErrorModel(handle);
+			if (!is_error_model)
+				++recovered_count;
+		}
+
+		if (!is_error_model && g_mdl_vmt_size > 46)
+			g_mdl_cache->PreloadModel(handle);
 
 		// Force the engine to load the model into memory first
-		if (g_model_info)
-			g_model_info->FindOrLoadModel(rule.replacement);
-
-		// Add to precache string table
-		precache_table->AddString(false, rule.replacement);
+		g_model_info->FindOrLoadModel(rule.replacement);
 
 		// Get model index
 		rule.precached_index = g_model_info->GetModelIndex(rule.replacement);
+		if (!is_error_model && rule.precached_index > 0)
+			++applied_count;
+		else
+		{
+			rule.precached_index = -1;
+			++failed_count;
+		}
 	}
+
+	if (enabled_count == 0)
+	{
+		set_operation(operation_status::warning, "Nothing to apply: there are no enabled rules.");
+		return;
+	}
+
+	char summary[256];
+	snprintf(summary, sizeof(summary), "Applied %d of %d enabled rules", applied_count, enabled_count);
+	std::string message = summary;
+	if (incomplete_count > 0)
+		message += "; " + std::to_string(incomplete_count) + " incomplete";
+	if (failed_count > 0)
+		message += "; " + std::to_string(failed_count) + " failed to load";
+	if (recovered_count > 0)
+		message += "; recovered " + std::to_string(recovered_count) + " cached error model";
+	message += ".";
+
+	set_operation(
+		failed_count == 0 && incomplete_count == 0 ? operation_status::success
+			: (applied_count > 0 ? operation_status::warning : operation_status::error),
+		message);
 }
 
 int model_changer::get_replacement_index(const char* original_model_name)
 {
-	if (!g_enabled) return -1;
+	if (!g_enabled || !original_model_name) return -1;
 	for (const auto& rule : g_replacements)
 	{
-		if (rule.enabled && rule.precached_index > 0 && strstr(original_model_name, rule.original))
+		if (rule.enabled && rule.original[0] != '\0' && rule.precached_index > 0
+			&& strstr(original_model_name, rule.original))
 			return rule.precached_index;
 	}
 	return -1;
@@ -553,12 +661,12 @@ static void model_from_json(const json& j, model_replacement& o)
 {
 	if (j.contains("enabled")) o.enabled = j["enabled"].get<bool>();
 	if (j.contains("original"))
-		strcpy_s(o.original, j["original"].get<std::string>().c_str());
+		copy_config_string(o.original, j["original"].get<std::string>());
 	if (j.contains("replacement"))
-		strcpy_s(o.replacement, j["replacement"].get<std::string>().c_str());
+		copy_config_string(o.replacement, j["replacement"].get<std::string>());
 	o.precached_index = -1;
+	o.is_patched = false;
 }
-bool model_changer::g_enable_custom_sounds = true;
 
 auto model_changer::save_config() -> void
 {
@@ -576,9 +684,25 @@ auto model_changer::save_config() -> void
 		}
 		j["rules"] = rules_arr;
 		auto of = std::ofstream("nSkinz_models.json");
-		if (of.good()) of << j.dump(4);
+		if (!of.good())
+		{
+			set_operation(operation_status::error, "Save failed: could not open nSkinz_models.json.");
+			return;
+		}
+		of << j.dump(4);
+		of.flush();
+		if (!of.good())
+		{
+			set_operation(operation_status::error, "Save failed while writing nSkinz_models.json.");
+			return;
+		}
+		set_operation(operation_status::success,
+			"Saved " + std::to_string(g_replacements.size()) + " rules to nSkinz_models.json.");
 	}
-	catch (...) {}
+	catch (const std::exception& error)
+	{
+		set_operation(operation_status::error, std::string("Save failed: ") + error.what());
+	}
 }
 
 auto model_changer::load_config() -> void
@@ -586,24 +710,48 @@ auto model_changer::load_config() -> void
 	try
 	{
 		auto ifile = std::ifstream("nSkinz_models.json");
-		if (ifile.good())
+		if (!ifile.good())
 		{
-			auto j = json::parse(ifile);
-			if (j.contains("enabled")) g_enabled = j["enabled"].get<bool>();
-			if (j.contains("custom_sounds")) g_enable_custom_sounds = j["custom_sounds"].get<bool>();
-			if (j.contains("rules"))
+			set_operation(operation_status::warning, "No nSkinz_models.json config exists yet.");
+			return;
+		}
+
+		auto j = json::parse(ifile);
+		if (!j.is_object())
+			throw std::runtime_error("the config root must be an object");
+
+		auto loaded_enabled = g_enabled;
+		auto loaded_custom_sounds = g_enable_custom_sounds;
+		auto loaded_rules = g_replacements;
+
+		if (j.contains("enabled")) loaded_enabled = j["enabled"].get<bool>();
+		if (j.contains("custom_sounds")) loaded_custom_sounds = j["custom_sounds"].get<bool>();
+		if (j.contains("rules"))
+		{
+			if (!j["rules"].is_array())
+				throw std::runtime_error("rules must be an array");
+			loaded_rules.clear();
+			for (const auto& rj : j["rules"])
 			{
-				g_replacements.clear();
-				for (const auto& rj : j["rules"])
-				{
-					model_replacement rule;
-					model_from_json(rj, rule);
-					g_replacements.push_back(rule);
-				}
+				if (!rj.is_object())
+					throw std::runtime_error("each rule must be an object");
+				model_replacement rule;
+				model_from_json(rj, rule);
+				loaded_rules.push_back(rule);
 			}
 		}
+
+		g_enabled = loaded_enabled;
+		g_enable_custom_sounds = loaded_custom_sounds;
+		g_replacements = std::move(loaded_rules);
+		set_operation(operation_status::success,
+			"Loaded " + std::to_string(g_replacements.size()) + " rules from nSkinz_models.json; apply when in a map.");
 	}
-	catch (const std::exception&) {}
+	catch (const std::exception& error)
+	{
+		set_operation(operation_status::error,
+			std::string("Load failed; current rules were kept: ") + error.what());
+	}
 }
 
 // ========================================================
@@ -621,7 +769,8 @@ static void scan_directory(const std::string& base_path, const std::string& rela
 		const std::string name = find_data.cFileName;
 		if (name == "." || name == "..") continue;
 
-		if (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		if ((find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+			&& !(find_data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
 			scan_directory(base_path, relative_path + name + "\\", results);
 		else if (name.length() > 4)
 		{
@@ -642,8 +791,14 @@ static void scan_directory(const std::string& base_path, const std::string& rela
 auto model_changer::scan_installed_models() -> void
 {
 	g_installed_models.clear();
+	g_models_root.clear();
 	char exe_path[MAX_PATH];
-	GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
+	if (GetModuleFileNameA(nullptr, exe_path, MAX_PATH) == 0)
+	{
+		g_models_scanned = true;
+		set_operation(operation_status::error, "Model scan failed: the game directory could not be resolved.");
+		return;
+	}
 	std::string game_dir = exe_path;
 	auto last_slash = game_dir.find_last_of("\\/");
 	if (last_slash != std::string::npos) game_dir = game_dir.substr(0, last_slash + 1);
@@ -655,13 +810,27 @@ auto model_changer::scan_installed_models() -> void
 	{
 		models_dir = game_dir + "models\\";
 		h_test = FindFirstFileA((models_dir + "*").c_str(), &test);
-		if (h_test == INVALID_HANDLE_VALUE) { g_models_scanned = true; return; }
+		if (h_test == INVALID_HANDLE_VALUE)
+		{
+			g_models_scanned = true;
+			set_operation(operation_status::error,
+				"Model scan failed: neither csgo/models nor models was found beside the game executable.");
+			return;
+		}
 	}
 	FindClose(h_test);
 
+	g_models_root = models_dir;
 	scan_directory(models_dir, "", g_installed_models);
 	std::sort(g_installed_models.begin(), g_installed_models.end());
+	g_installed_models.erase(
+		std::unique(g_installed_models.begin(), g_installed_models.end()),
+		g_installed_models.end());
 	g_models_scanned = true;
+	set_operation(g_installed_models.empty() ? operation_status::warning : operation_status::success,
+		g_installed_models.empty()
+			? "Model scan completed, but no loose .mdl files were found."
+			: "Found " + std::to_string(g_installed_models.size()) + " installed model files.");
 }
 
 // ========================================================
@@ -681,12 +850,12 @@ auto model_changer::initialize() -> void
 
 	g_mdl_instance = (DWORD*)g_mdl_cache;
 	g_mdl_original_vmt = (DWORD*)*g_mdl_instance;
-	int mdl_vmt_size = CountVMTMethods(g_mdl_original_vmt);
-	if (mdl_vmt_size <= 10) { g_hook_status = "FAILED: MDLCache VMT too small"; return; }
+	g_mdl_vmt_size = CountVMTMethods(g_mdl_original_vmt);
+	if (g_mdl_vmt_size <= 10) { g_hook_status = "FAILED: MDLCache VMT too small"; return; }
 
-	g_mdl_custom_vmt = (DWORD*)malloc(mdl_vmt_size * sizeof(DWORD));
+	g_mdl_custom_vmt = (DWORD*)malloc(g_mdl_vmt_size * sizeof(DWORD));
 	if (!g_mdl_custom_vmt) { g_hook_status = "FAILED: malloc"; return; }
-	memcpy(g_mdl_custom_vmt, g_mdl_original_vmt, mdl_vmt_size * sizeof(DWORD));
+	memcpy(g_mdl_custom_vmt, g_mdl_original_vmt, g_mdl_vmt_size * sizeof(DWORD));
 
 	g_original_find_mdl = (FindMDL_fn)g_mdl_original_vmt[10];
 	g_mdl_custom_vmt[10] = (DWORD)&hkFindMDL;

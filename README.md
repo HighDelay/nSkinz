@@ -34,6 +34,13 @@ Currently only Windows is supported, however this may change ~~in the future~~ ~
 * To override multiple weapons press the "Add" button. When an inventory update occurs always the first enabled entry applicable for that weapon will be used.
 * To save your configuration press the "Save" button. To load it later press the "Load" button.
 
+### Custom model workflow
+
+* Extract loose model files under the game's `csgo/models` directory, then open the **Model Changer** tab. The model browser scans that directory automatically; use **Refresh model list** after installing more files.
+* Press **+ New**, choose an original-model preset, then click an installed model to use as its replacement. The text fields remain available for custom substring matches and paths.
+* Rules run from top to bottom and the first enabled match wins. Use **Move up** and **Move down** when a broad rule would otherwise hide a more specific one.
+* Press **Apply to current map** after changing rules. **Save rules** stores the model configuration separately in `nSkinz_models.json`.
+
 ## Credits
 
 * **[CSGO-FindMDL](https://github.com/kruz1337/CSGO-FindMDL)** and **[model-frog](https://github.com/cazzwastaken/model-frog)** - Inspiration for the `FindMDL` hook approach used to seamlessly swap active model handles.

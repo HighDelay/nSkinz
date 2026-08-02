@@ -17,6 +17,14 @@ struct model_replacement
 
 namespace model_changer
 {
+	enum class operation_status
+	{
+		none,
+		success,
+		warning,
+		error
+	};
+
 	extern std::vector<model_replacement> g_replacements;
 	extern bool g_enabled;
 	extern bool g_enable_custom_sounds;
@@ -27,6 +35,11 @@ namespace model_changer
 	// Installed model files scanned from game directory
 	extern std::vector<std::string> g_installed_models;
 	extern bool g_models_scanned;
+	extern std::string g_models_root;
+
+	// Feedback from the last scan/apply/config action
+	extern operation_status g_last_operation_status;
+	extern std::string g_last_operation_message;
 
 	// Hook status
 	extern bool g_hook_active;
